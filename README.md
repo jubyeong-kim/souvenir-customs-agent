@@ -96,10 +96,8 @@ streamlit run app.py            # 데모 화면 (대화형)
    ```
 3. Deploy
 
-배포 후 문서를 새로 받으려면 로컬에서 `python fetch_docs.py` 하고 커밋하면 자동 재배포된다.
-서버에서는  를 돌리지 않는다 — 커밋된 `docs/` 를 읽는다.
-
-`docs/` 가 저장소에 함께 올라가므로 서버에서 `fetch_docs.py` 를 돌리지 않아도 바로 답한다.
+서버에서는 `fetch_docs.py` 를 돌리지 않는다 — **커밋된 `docs/` 를 읽는다.**
+문서를 새로 받으려면 로컬에서 `python fetch_docs.py` 후 커밋하면 자동 재배포된다.
 문서를 새로 받으려면 로컬에서 `python fetch_docs.py` 후 커밋하면 자동 재배포된다.
 
 같은 공유기 안에서만 보여 주면 되는 자리라면 서버를 띄운 채
