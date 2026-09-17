@@ -1,8 +1,15 @@
-requests
-trafilatura
-pyyaml
+# 데모(app.py) 가 도는 데 필요한 것
+streamlit>=1.30          # st.chat_message / st.chat_input
 openai
 langgraph
 pydantic
 python-dotenv
-streamlit
+pyyaml
+
+# 문서를 받아오는 데 필요한 것 (fetch_docs.py). 데모는 커밋된 docs/ 를 읽으므로 없어도 돈다.
+requests
+trafilatura
+pymupdf                  # 상담 사례집 PDF
+
+# 데모 캡처 (capture_demo.py). 설치된 Edge 를 쓰므로 브라우저는 따로 받지 않는다.
+playwright
