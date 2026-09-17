@@ -190,26 +190,34 @@ TOOLS = {
 TOOL_NAMES = {k: f.__name__ for k, f in TOOLS.items()}
 
 
-# 금액을 물어도 **물건 자체가 막히는** 품목. 이런 말이 문의에 있으면 분류가 무엇이든
-# 해당 영역을 같이 본다.
+# 품목 이름만으로 **다른 영역까지 봐야 하는** 경우. 분류가 무엇이든 그 영역을 같이 본다.
 #
-# 이걸 넣기 전: 「독일 소시지 30달러어치 샀는데 면세 한도 안이면 괜찮죠?」 가 `면세` 로
-# 분류돼 검역 문서를 아예 보지 못했고, 봇이 **"신고 없이 통과할 수 있다"** 고 답했다.
-# 검역이 막는 물건이다. 사용자가 그 말을 믿으면 과태료를 문다.
-# 분류는 "무엇을 묻는가"를 맞혔지만, 답에 필요한 것은 "무엇을 가져오는가" 였다.
-RESTRICTED = {
+# 분류는 "무엇을 묻는가"를 맞힌다. 그런데 답에 필요한 것은 "무엇을 가져오는가" 인 때가 있다.
+# 두 가지 이유로 갈린다:
+#
+#   금지·제한  물건 자체가 막힌다. 「소시지 30달러어치, 면세 한도 안이면 괜찮죠?」 가 `면세` 로
+#              분류돼 검역 문서를 못 보고 **"신고 없이 통과할 수 있다"** 고 답했다. 믿으면 과태료다
+#   별도 한도  술·담배·향수는 기본 800달러와 **별도 한도**를 갖는다. 「입국장면세점에서 산
+#              위스키도 술 면세 한도에?」 가 `면세점` 으로만 조회돼 2L·400달러를 못 보고
+#              "국산 술이면 한도에 포함" 이라는 흐린 답이 나왔다
+#
+# 실험기록 #9 · #11.
+CROSS_CHECK = {
     "검역": ("소시지", "햄", "육포", "장조림", "통조림", "육류", "고기", "쇠고기", "돼지고기",
              "닭고기", "양고기", "우유", "치즈", "버터", "요거트", "계란", "달걀",
              "과일", "망고", "두리안", "씨앗", "묘목", "화분", "녹용", "생과일"),
     "멸종위기종": ("악어", "뱀가죽", "상아", "코끼리", "호랑이", "표범", "산호", "거북",
                    "자단", "웅담", "사향", "서각", "호골", "철갑상어", "캐비어",
                    "모피", "박제", "가죽", "파충류"),
+    # 기본 면세범위와 별도로 한도가 따로 있는 품목. 면세점·검역 쪽에서 물어도 이 한도를 함께 봐야 한다.
+    "면세": ("술", "주류", "위스키", "와인", "맥주", "소주", "양주", "보드카",
+             "담배", "궐련", "전자담배", "향수"),
 }
 
 
-def restricted_hits(query: str, skip: str) -> list[str]:
-    """문의에 들어 있는 금지·제한 품목의 영역. `skip`(이미 보는 영역)은 뺀다."""
-    return [cat for cat, words in RESTRICTED.items()
+def cross_hits(query: str, skip: str) -> list[str]:
+    """문의의 품목이 가리키는 다른 영역. `skip`(이미 보는 영역)은 뺀다."""
+    return [cat for cat, words in CROSS_CHECK.items()
             if cat != skip and any(w in query for w in words)]
 
 
@@ -223,7 +231,7 @@ def assemble(category: str, query: str) -> tuple[list[dict], list[str]]:
         return [], []
 
     evidence, tools = tool(query), [tool.__name__]
-    for extra in restricted_hits(query, skip=category):
+    for extra in cross_hits(query, skip=category):
         more = TOOLS[extra](query)
         if more:
             evidence += more
@@ -263,6 +271,9 @@ def demo():
     # 금액을 물어도 물건 자체가 막히는 품목이면 그 영역을 같이 본다
     _, t = assemble("면세", "독일 소시지 30달러어치 샀는데 면세 한도 안이면 괜찮죠?")
     assert t == ["lookup_duty", "lookup_quarantine"], t
+    # 별도 한도가 있는 품목은 면세점 문의에서도 면세 문서를 같이 본다
+    _, t = assemble("면세점", "입국장면세점에서 산 위스키도 술 면세 한도에 포함되나요?")
+    assert t == ["lookup_dutyfree_shop", "lookup_duty"], t
     # 이미 그 영역을 보고 있으면 두 번 부르지 않는다
     _, t = assemble("검역", "소시지 가져와도 되나요")
     assert t == ["lookup_quarantine"], t
