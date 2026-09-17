@@ -87,6 +87,7 @@ python agent.py "술 몇 병까지 면세되나요"
 
 python evaluate.py --self-check # 채점기 자체를 먼저 검증한다
 python evaluate.py              # 평가셋 12건 측정
+python evaluate.py --repeat 3   # 3회 돌려 **안정성**(분산)까지 본다
 
 python probe_ambiguous.py       # 어려운 문의 24건 (경계·애매·제품명) — 채점하지 않는다
 python probe_multiturn.py       # 되묻고 이어지는 대화 5건

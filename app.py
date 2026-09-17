@@ -43,6 +43,11 @@ with st.sidebar:
     st.divider()
     st.caption("입국 시 반입 기준만 다룹니다. 출국 반출·상대국 규정은 범위 밖입니다.")
     st.divider()
+    # 되묻기가 있으니 잘못 답했을 때 한 턴만 되돌릴 수 있어야 한다.
+    if st.session_state.get("turns"):
+        if st.button("← 마지막 질문 취소", use_container_width=True):
+            st.session_state.turns.pop()
+            st.rerun()
     if st.button("대화 새로 시작", use_container_width=True):
         st.session_state.turns = []
         st.rerun()

@@ -2,6 +2,7 @@
 
     python evaluate.py --self-check   # 모범 답안으로 채점기 자체를 검증한다 (먼저)
     python evaluate.py                # 평가셋 전체
+    python evaluate.py --repeat 3     # 3회 돌려 **분산**까지 본다
     python evaluate.py --n 3          # 앞 3건만
 
 측정 규칙 (chatbot/PLAYBOOK.md 5번, 타협하지 않는다):
@@ -10,6 +11,10 @@
   - 최소 두 번 잰다. 점수가 아니라 **실패한 케이스 목록**으로 비교한다
   - 목표 케이스가 2회 연속 통과해야 "수정됨"
   - 1건 차이는 변화 없음
+
+그리고 **평균만 보면 안 된다.** 배포 후에 「비첸향」 이 돌릴 때마다 가부가 뒤집혔는데
+(5회 중 3회 틀림) 평균 점수로는 보이지 않았다. `--repeat N` 이 문항별로 몇 회 통과했는지
+세고 **흔들린 문항**(0회도 N회도 아닌 것)을 따로 보여 준다. 실험기록 #17·#18.
 """
 import argparse, json, os, pathlib, sys
 
@@ -105,6 +110,45 @@ def run_set(cases: list[dict]) -> list[dict]:
     return rows
 
 
+def report_repeat(runs: list[list[dict]]) -> None:
+    """N 회 결과를 문항별로 모아 **분산**을 보여 준다.
+
+    평균이 같아도 «늘 맞는 12건》 과 «반쯤 맞는 12건》 은 전혀 다른 물건이다.
+    후자는 사용자가 같은 질문을 두 번 했을 때 다른 답을 받는다.
+    """
+    n = len(runs)
+    by_id: dict[str, list[dict]] = {}
+    for run in runs:
+        for r in run:
+            by_id.setdefault(r["id"], []).append(r)
+
+    print(f"{chr(10)}  ── {n}회 반복 ──")
+    for i, run in enumerate(runs, 1):
+        t = sum(r["도구"] for r in run)
+        a = sum(r["답변"] for r in run)
+        print(f"  {i}회차   도구 {t}/{len(run)} = {t/len(run):.1%}   "
+              f"답변 {a}/{len(run)} = {a/len(run):.1%}")
+
+    shaky = []
+    print(f"{chr(10)}  문항별 통과 횟수 ({n}회 중)")
+    for cid, rs in by_id.items():
+        t = sum(r["도구"] for r in rs)
+        a = sum(r["답변"] for r in rs)
+        mark = "  " if (t == n and a == n) else ("XX" if (t == 0 or a == 0) else "~~")
+        if 0 < a < n or 0 < t < n:
+            shaky.append(cid)
+        print(f"    {mark} {cid:<4} [{rs[0]['카테고리']}] 도구 {t}/{n}  답변 {a}/{n}")
+
+    total = len(by_id)
+    print(f"{chr(10)}  **안정성  {total - len(shaky)}/{total} 문항이 {n}회 모두 같은 결과**")
+    if shaky:
+        print(f"  흔들린 문항: {' '.join(shaky)}")
+        print("  → 평균만 보면 안 보인다. 이 문항을 5회 더 돌려 어느 단계가 흔들리는지 가른다:")
+        print("     분류 · 정규화 · 근거 절은 같은가? 답변만 흔들리는가?")
+    else:
+        print("  흔들린 문항 없음 — 같은 질문에 같은 답을 준다.")
+
+
 def report(rows: list[dict]) -> None:
     n = len(rows)
     t = sum(r["도구"] for r in rows)
@@ -162,6 +206,7 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--self-check", action="store_true", help="채점기 자체를 먼저 검증한다")
     p.add_argument("--n", type=int, help="앞 N건만")
+    p.add_argument("--repeat", type=int, default=1, help="N회 반복해 분산까지 본다")
     p.add_argument("--save", help="결과를 JSON 으로 저장할 경로")
     args = p.parse_args()
 
@@ -174,11 +219,21 @@ def main() -> int:
     cases = json.loads(GOLDEN.read_text(encoding="utf-8"))
     if args.n:
         cases = cases[: args.n]
-    rows = run_set(cases)
-    report(rows)
+    runs = []
+    for i in range(max(1, args.repeat)):
+        if args.repeat > 1:
+            print(f"\n  [{i + 1}/{args.repeat}]")
+        runs.append(run_set(cases))
+
+    if args.repeat > 1:
+        report_repeat(runs)
+    else:
+        report(runs[0])
+
     if args.save:
+        payload = runs if args.repeat > 1 else runs[0]
         pathlib.Path(args.save).write_text(
-            json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"\n  저장: {args.save}")
     return 0
 
