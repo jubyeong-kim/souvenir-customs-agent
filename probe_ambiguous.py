@@ -1,12 +1,17 @@
-"""분류 경계에 걸치는 질문을 돌려 본다. 채점하지 않는다 — 어디로 가는지 보는 것이 목적이다.
+"""어려운 문의를 돌려 본다. 채점하지 않는다 — 어디로 가는지 보는 것이 목적이다.
 
-    python probe_ambiguous.py
+    python probe_ambiguous.py            # 전부
+    python probe_ambiguous.py 경계        # 분류가 걸치는 것만
+    python probe_ambiguous.py 애매        # 되물어야 하는 것만
 
-평가셋 12건은 카테고리가 깔끔하게 갈리는 문항만 있다. 실제 문의는 두 영역에 걸친다.
+평가셋 12건은 카테고리가 깔끔하게 갈리고 필요한 정보가 다 들어 있는 문항만 있다.
+실제 문의는 두 영역에 걸치거나, 답을 정하는 정보가 빠져 있다.
 """
+import sys
+
 import agent
 
-CASES = [
+BOUNDARY = [
     ("악어가죽 지갑도 800달러 안에 들어가면 그냥 가져올 수 있나요?",
      "멸종위기종 ↔ 면세  — 금액 이야기를 하지만 핵심은 CITES 허가다"),
     ("입국장면세점에서 산 위스키도 술 면세 한도에 포함되나요?",
@@ -26,10 +31,45 @@ CASES = [
 ]
 
 
+# 사람이 애매하게 말해서 **한 번 더 물어야** 하는 문의.
+# 빠진 정보가 답을 뒤집는다 — 짐작해서 답하면 그럴듯하게 틀린다.
+# (chatbot/PLAYBOOK.md 3-③: 식별자 없으면 도구 호출 금지 + 되묻기 강제)
+VAGUE = [
+    ("이거 세금 내야 하나요?",
+     "품목도 금액도 없다 — 무엇을, 얼마에 샀는지 없이는 아무 답도 못 한다"),
+    ("술 좀 사왔어요.",
+     "용량과 금액이 없다 — 2L·400달러 둘 다 따져야 하는데 둘 다 모른다"),
+    ("고기 좀 사왔는데 괜찮아요?",
+     "어느 나라에서, 검역증명서가 있는지에 따라 가능/불가가 정반대다"),
+    ("가방 하나 샀어요. 신고해야 되나요?",
+     "금액을 모르고, 재질이 악어가죽이면 CITES 로 이야기가 달라진다"),
+    ("한약재 가져와도 돼요?",
+     "웅담·사향이면 CITES, 일반 약재면 검역 — 품목명이 없으면 갈 수 없다"),
+    ("동물 가죽으로 만든 제품인데 문제 있을까요?",
+     "어떤 동물인지가 전부다. 소가죽과 악어가죽이 다르다"),
+    ("친구가 부탁해서 대신 사온 것도 면세되나요?",
+     "자가사용이 아니면 면세 기준이 적용되지 않는다 — 수량·용도를 물어야 한다"),
+    ("면세 한도 넘었는데 어떻게 해요?",
+     "이미 입국했는지, 아직 신고 전인지에 따라 30% 경감과 40% 가산세로 갈린다"),
+]
+
+GROUPS = {"경계": BOUNDARY, "애매": VAGUE}
+
+
 def main():
-    for i, (q, why) in enumerate(CASES, 1):
+    picked = sys.argv[1] if len(sys.argv) > 1 else None
+    for name, cases in GROUPS.items():
+        if picked and picked != name:
+            continue
+        bar = "#" * 78
+        print(f"\n\n{bar}\n#  {name}\n{bar}")
+        run_group(cases)
+
+
+def run_group(cases):
+    for i, (q, why) in enumerate(cases, 1):
         s = agent.run(q)
-        print(f"\n{'=' * 78}\n[{i}] {q}\n    걸치는 지점: {why}")
+        print(f"\n{'=' * 78}\n[{i}] {q}\n    어려운 지점: {why}")
         print(f"    분류: {s['category']}   도구: {s['tools_called'] or '없음 (넘김)'}"
               f"   검증: {'위반 ' + str(s['violations']) if s['violations'] else '통과'}")
         for e in s["evidence"]:
