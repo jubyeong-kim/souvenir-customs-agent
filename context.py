@@ -4,7 +4,7 @@
 바로 이 검색 함수다 — 모두몰 때도 동료도 여기서 버그를 만났고, 양쪽 다 프롬프트로는
 끝내 안 풀렸다. (chatbot/PLAYBOOK.md 3-④)
 """
-import pathlib, re, yaml
+import math, pathlib, re, yaml
 
 ROOT = pathlib.Path(__file__).parent
 DOCS = ROOT / "docs"
@@ -56,6 +56,7 @@ def _load() -> list[dict]:
             title, _, text = block.partition("\n")
             sections.append({
                 "카테고리": src["카테고리"],
+                "보조": bool(src.get("보조")),
                 "출처": src["url"],
                 "기준일": 기준일.group(1) if 기준일 else "?",
                 "제목": title.strip(),
@@ -67,26 +68,51 @@ def _load() -> list[dict]:
 SECTIONS = _load()
 
 
+def idf(token: str, pool: list[dict]) -> float:
+    """흔한 말의 가중치를 낮춘다.
+
+    이걸 넣기 전에는 `신고` 가 점수를 지배했다. 통관 문서에서 "신고"는 거의 모든 절에
+    나오므로 그 말로는 절을 **구분할 수 없다.** 반대로 `한도`·`가산세` 처럼 몇 절에만
+    나오는 말이 사실은 질문의 핵심이다. 실제로 「가산세 40%·2년내 2회 이상 60%」 절이
+    7위(8점)로 밀려 답변이 "자료에 없습니다"가 됐다. 실험기록 #2.
+    """
+    df = sum(1 for s in pool if token in s["제목"] + s["본문"])
+    return math.log((len(pool) + 1) / (df + 1)) + 0.3   # df=전부여도 0 이 아니게
+
+
 def search(category: str, query: str, top: int = 3) -> list[dict]:
     """카테고리 안에서만 찾는다. 점수 0이면 빈 목록 — 근거가 없다는 뜻이고,
     호출한 쪽은 지어내지 말고 넘겨야 한다."""
     tokens = tokenize(query)
+    pool = [s for s in SECTIONS if s["카테고리"] == category]
+    weights = {t: idf(t, pool) for t in tokens}
     scored = []
-    for sec in SECTIONS:
-        if sec["카테고리"] != category:
-            continue
+    for sec in pool:
         haystack = sec["제목"] + "\n" + sec["본문"]
-        score = 0
+        score = 0.0
         for t in tokens:
-            score += haystack.count(t) * 3          # 완전일치에 가중치
+            w = weights[t]
+            score += haystack.count(t) * 3 * w      # 완전일치에 가중치
             if t in sec["제목"]:
-                score += 2                          # 절 제목에 있으면 그 절이 주제다
+                score += 2 * w                      # 절 제목에 있으면 그 절이 주제다
             if len(t) >= 3:                         # 부분일치는 낮게
-                score += sum(haystack.count(t[i:i + 2]) for i in range(len(t) - 1)) * 0.1
+                score += sum(haystack.count(t[i:i + 2])
+                             for i in range(len(t) - 1)) * 0.1 * w
         if score > 0:
             scored.append((score, sec))
     scored.sort(key=lambda x: -x[0])
-    return [s for _, s in scored[:top]]
+
+    # 규정 문서를 먼저 채운다. 사례집(보조)은 절이 10개나 되어 규정 문서 3절을
+    # 점수로 밀어냈고, 그 결과 「면세 800달러」·「가산세 60%」가 근거에 못 들어와
+    # 답변이 "자료에 없습니다"가 됐다. 사례집은 보충 설명이지 1차 근거가 아니다.
+    # 실험기록 #3.
+    main = [s for _, s in scored if not s["보조"]]
+    aux = [s for _, s in scored if s["보조"]]
+    # 보조 문서가 있을 때만 자리를 비워 둔다. 처음엔 무조건 한 자리를 뺐다가
+    # 보조 문서가 없는 카테고리(검역)의 근거가 3절 → 2절로 줄어 Q2 가 깨졌다.
+    reserve = 1 if aux else 0
+    picked = main[: top - reserve]
+    return picked + aux[: top - len(picked)]
 
 
 # ── 도구: 카테고리마다 하나씩. 호출된 도구 집합이 곧 "도구 호출 적절성" 지표다.
