@@ -80,6 +80,7 @@ class State(TypedDict, total=False):
     evidence: list
     tools_called: list
     answer: str
+    reply: dict            # {결론, 준비물, 자세히} — 데모가 토막마다 다르게 보여 준다
     violations: list
     retried: bool
 
@@ -90,6 +91,17 @@ class Category(BaseModel):
 
 class Terms(BaseModel):
     문서어휘: list[str] = Field(description="DOC_TERMS 안의 말만. 없으면 빈 목록")
+
+
+class Reply(BaseModel):
+    """답을 세 토막으로 받는다. 사람들은 긴 줄글을 읽지 않는다.
+
+    마크다운으로 써 달라고 부탁하는 대신 구조로 받는다 — 서식이 흔들리지 않고,
+    데모 화면이 토막마다 다르게 보여 줄 수 있다.
+    """
+    결론: str = Field(description="한 문장. 되는지 안 되는지, 조건이 붙는지")
+    준비물: list[str] = Field(description="입국할 때 챙겨야 하는 것·해야 하는 행동. 없으면 빈 목록")
+    자세히: str = Field(description="기준·한도·예외·처벌. 3~6문장")
 
 
 class Gate(BaseModel):
@@ -199,8 +211,23 @@ def answer(state: State) -> State:
                      "위 답변에 [근거]에 없는 값이 있습니다: "
                      + ", ".join(state["violations"])
                      + ". 그 값을 빼거나 [근거]에 있는 값으로 바꿔 다시 쓰세요."})
-    r = client().chat.completions.create(model=MODEL, messages=msgs, temperature=0)
-    return {"answer": r.choices[0].message.content.strip()}
+    r = client().beta.chat.completions.parse(
+        model=MODEL, messages=msgs, response_format=Reply, temperature=0)
+    rep = r.choices[0].message.parsed
+    return {"answer": render(rep), "reply": {"결론": rep.결론,
+                                             "준비물": rep.준비물,
+                                             "자세히": rep.자세히}}
+
+
+def render(rep: "Reply") -> str:
+    """세 토막을 한 덩어리 글로 합친다. 채점기와 검증은 이 글을 본다."""
+    out = [f"**{rep.결론.strip()}**"]
+    if rep.준비물:
+        items = chr(10).join(f"- {x}" for x in rep.준비물)
+        out.append("**입국할 때 챙기세요**" + chr(10) + items)
+    if rep.자세히.strip():
+        out.append(rep.자세히.strip())
+    return (chr(10) * 2).join(out)
 
 
 # ───────────────────────── ④ 검증 ─────────────────────────
@@ -282,7 +309,7 @@ GRAPH = build()
 
 def run(query: str, history: list | None = None) -> State:
     """한 턴을 돌린다. `history` 는 [(사용자, 봇), …] — 앞선 턴들."""
-    return GRAPH.invoke({"query": query, "history": history or [],
+    return GRAPH.invoke({"query": query, "history": history or [], "reply": {},
                          "evidence": [], "tools_called": [],
                          "violations": [], "retried": False, "missing": [],
                          "terms": [], "normalized": False})

@@ -80,7 +80,18 @@ for i, (user_text, s) in enumerate(st.session_state.turns):
     with st.chat_message("user"):
         st.write(user_text)
     with st.chat_message("assistant"):
-        st.markdown(s["answer"])
+        rep = s.get("reply") or {}
+        if rep.get("결론"):
+            # 결론을 먼저, 크게. 긴 줄글은 그 아래로 내린다.
+            st.markdown(f"### {rep['결론']}")
+            if rep.get("준비물"):
+                st.markdown("**입국할 때 챙기세요**")
+                for item in rep["준비물"]:
+                    st.markdown(f"- {item}")
+            if rep.get("자세히"):
+                st.markdown(rep["자세히"])
+        else:
+            st.markdown(s["answer"])       # 되묻기·넘김은 토막이 없다
 
         label = ("되묻기" if s.get("missing")
                  else "넘김" if not s["tools_called"] else "답변")
