@@ -174,12 +174,45 @@ TOOLS = {
 TOOL_NAMES = {k: f.__name__ for k, f in TOOLS.items()}
 
 
+# 금액을 물어도 **물건 자체가 막히는** 품목. 이런 말이 문의에 있으면 분류가 무엇이든
+# 해당 영역을 같이 본다.
+#
+# 이걸 넣기 전: 「독일 소시지 30달러어치 샀는데 면세 한도 안이면 괜찮죠?」 가 `면세` 로
+# 분류돼 검역 문서를 아예 보지 못했고, 봇이 **"신고 없이 통과할 수 있다"** 고 답했다.
+# 검역이 막는 물건이다. 사용자가 그 말을 믿으면 과태료를 문다.
+# 분류는 "무엇을 묻는가"를 맞혔지만, 답에 필요한 것은 "무엇을 가져오는가" 였다.
+RESTRICTED = {
+    "검역": ("소시지", "햄", "육포", "장조림", "통조림", "육류", "고기", "쇠고기", "돼지고기",
+             "닭고기", "양고기", "우유", "치즈", "버터", "요거트", "계란", "달걀",
+             "과일", "망고", "두리안", "씨앗", "묘목", "화분", "녹용", "생과일"),
+    "멸종위기종": ("악어", "뱀가죽", "상아", "코끼리", "호랑이", "표범", "산호", "거북",
+                   "자단", "웅담", "사향", "서각", "호골", "철갑상어", "캐비어",
+                   "모피", "박제", "가죽", "파충류"),
+}
+
+
+def restricted_hits(query: str, skip: str) -> list[str]:
+    """문의에 들어 있는 금지·제한 품목의 영역. `skip`(이미 보는 영역)은 뺀다."""
+    return [cat for cat, words in RESTRICTED.items()
+            if cat != skip and any(w in query for w in words)]
+
+
 def assemble(category: str, query: str) -> tuple[list[dict], list[str]]:
-    """카테고리에 맞는 도구 하나만 부른다. 반환: (근거 절, 호출한 도구 이름)"""
+    """분류된 카테고리를 보되, 물건 자체가 막히는 품목이면 그 영역도 같이 본다.
+
+    반환: (근거 절, 호출한 도구 이름)
+    """
     tool = TOOLS.get(category)
-    if tool is None:                       # 범위 밖 — 도구를 부르지 않는다
+    if tool is None:                       # 범위 밖 — 도구를 하나도 부르지 않는다
         return [], []
-    return tool(query), [tool.__name__]
+
+    evidence, tools = tool(query), [tool.__name__]
+    for extra in restricted_hits(query, skip=category):
+        more = TOOLS[extra](query)
+        if more:
+            evidence += more
+            tools.append(TOOLS[extra].__name__)
+    return evidence, tools
 
 
 def demo():
@@ -210,6 +243,15 @@ def demo():
 
     ev, tools = assemble("면세", "술 면세 한도")
     assert tools == ["lookup_duty"] and ev, (tools, len(ev))
+
+    # 금액을 물어도 물건 자체가 막히는 품목이면 그 영역을 같이 본다
+    _, t = assemble("면세", "독일 소시지 30달러어치 샀는데 면세 한도 안이면 괜찮죠?")
+    assert t == ["lookup_duty", "lookup_quarantine"], t
+    # 이미 그 영역을 보고 있으면 두 번 부르지 않는다
+    _, t = assemble("검역", "소시지 가져와도 되나요")
+    assert t == ["lookup_quarantine"], t
+    # 범위 밖은 품목이 무엇이든 도구를 부르지 않는다
+    assert assemble("범위밖", "악어가죽 지갑 미국 갈 때") == ([], [])
     print(f"context.py OK — 절 {len(SECTIONS)}개, 카테고리 {sorted({s['카테고리'] for s in SECTIONS})}")
 
 
