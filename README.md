@@ -98,7 +98,6 @@ streamlit run app.py            # 데모 화면 (대화형)
 
 서버에서는 `fetch_docs.py` 를 돌리지 않는다 — **커밋된 `docs/` 를 읽는다.**
 문서를 새로 받으려면 로컬에서 `python fetch_docs.py` 후 커밋하면 자동 재배포된다.
-문서를 새로 받으려면 로컬에서 `python fetch_docs.py` 후 커밋하면 자동 재배포된다.
 
 같은 공유기 안에서만 보여 주면 되는 자리라면 서버를 띄운 채
 `http://<내 IP>:8501` 로 접속하면 된다 (`--server.address 0.0.0.0` 필요).
