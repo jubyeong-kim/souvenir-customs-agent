@@ -1,0 +1,8 @@
+requests
+trafilatura
+pyyaml
+openai
+langgraph
+pydantic
+python-dotenv
+streamlit
