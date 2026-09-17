@@ -25,6 +25,35 @@ JOSA = ("에서는", "으로는", "에게는", "까지", "부터", "에서", "�
         "에", "의", "로", "와", "과", "도", "만")
 
 
+# 사람이 쓰는 말 → 문서가 쓰는 말. 규정 문서는 `주류`·`육가공품` 이라 쓰고
+# 사람은 `술`·`소시지` 라 쓴다. 이게 안 이어지면 근거를 못 찾아 넘겨 버린다.
+# 실제로 시연에서 "예전엔 술 2병까지…" 가 넘김 처리됐다 — 평가셋 12건이 못 잡던 것이다.
+# 오른쪽은 반드시 docs/ 에 실제로 있는 말이어야 한다. 없는 말을 넣으면 아무 효과가 없다.
+SYNONYMS = {
+    "술": "주류", "소주": "주류", "위스키": "주류", "와인": "주류", "맥주": "주류",
+    "담배": "궐련", "전자담배": "니코틴용액",
+    "소시지": "육가공품", "햄": "육가공품", "육포": "육가공품", "고기": "육류",
+    "치즈": "유가공품", "우유": "유가공품", "버터": "유가공품",
+    "과일": "생과실", "망고": "생과실", "바나나": "생과실",
+    "지갑": "가공품", "핸드백": "가공품", "가방": "가공품", "벨트": "가공품",
+    "가죽": "부분품", "상아": "부분품", "뿔": "부분품",
+    "한도": "면세범위", "얼마": "면세범위", "세금": "관세",
+}
+
+
+def expand(text: str) -> str:
+    """질문에 문서의 말을 덧붙인다. 원래 말은 지우지 않는다 — 둘 다 걸리는 편이 낫다.
+
+    ponytail: 단어 앞머리로만 맞춘다. "술이"·"술은" 은 걸리고 "미술품" 은 안 걸린다.
+    """
+    extra = []
+    for word in text.split():
+        for key, doc_word in SYNONYMS.items():
+            if word.startswith(key):
+                extra.append(doc_word)
+    return text + " " + " ".join(extra)
+
+
 def tokenize(text: str) -> list[str]:
     """두 글자 이상 토큰만. 조사를 떼되, 떼고 나서 한 글자가 되면 원형을 쓴다."""
     words = re.findall(r"[가-힣A-Za-z0-9]+", text)
@@ -83,7 +112,7 @@ def idf(token: str, pool: list[dict]) -> float:
 def search(category: str, query: str, top: int = 3) -> list[dict]:
     """카테고리 안에서만 찾는다. 점수 0이면 빈 목록 — 근거가 없다는 뜻이고,
     호출한 쪽은 지어내지 말고 넘겨야 한다."""
-    tokens = tokenize(query)
+    tokens = tokenize(expand(query))
     pool = [s for s in SECTIONS if s["카테고리"] == category]
     weights = {t: idf(t, pool) for t in tokens}
     scored = []
@@ -172,6 +201,12 @@ def demo():
 
     # 범위 밖은 도구를 부르지 않는다
     assert assemble("범위밖", "비행기 수하물 몇 kg까지예요") == ([], [])
+
+    # 사람 말과 문서 말이 다른 경우 (시연에서 나온 실패)
+    assert "주류" in tokenize(expand("예전엔 술 2병까지 됐잖아요")), tokenize(expand("술 2병"))
+    assert "주류" not in tokenize(expand("미술품 반입")), "앞머리 매칭이 너무 헐겁다"
+    hit = search("면세", "예전엔 술 2병까지 됐잖아요. 지금은 어떻게 되나요?")
+    assert hit and any("2L" in h["본문"] for h in hit), [h["제목"] for h in hit]
 
     ev, tools = assemble("면세", "술 면세 한도")
     assert tools == ["lookup_duty"] and ev, (tools, len(ev))

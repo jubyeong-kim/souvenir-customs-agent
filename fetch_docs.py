@@ -83,6 +83,11 @@ def fetch_pdf(src: dict) -> str:
     # ponytail: 다른 PDF 를 넣었는데 글자가 깨지면 여기에 추가한다.
     SPACE_GLYPH = str.maketrans({"堺": " ", "埑": " "})
     kw = re.compile("|".join(src["쪽키워드"]))
+    # 주제는 맞지만 **다른 제도**를 다루는 쪽을 뺀다. 이 봇은 여행자가 직접 들고 오는
+    # 경우만 다루는데, 사례집에는 「해외에서 발송되는」 해외직구 기준(150달러·1병)이
+    # 같은 "술 면세" 제목 아래 실려 있다. 근거에 들어오면 모델이 그쪽을 인용한다.
+    # 실험기록 #7.
+    skip = re.compile("|".join(src["쪽제외"])) if src.get("쪽제외") else None
     blocks = []
     with pymupdf.open(stream=r.content, filetype="pdf") as doc:
         for i, page in enumerate(doc):
@@ -90,6 +95,8 @@ def fetch_pdf(src: dict) -> str:
             lines = [ln for ln in text.splitlines() if ln.strip()]
             if not kw.search(text) or len(lines) < 5:
                 continue
+            if skip and skip.search(text):
+                continue               # 주제는 맞지만 다른 제도를 다루는 쪽
             if sum(bool(TOC.match(ln)) for ln in lines) > len(lines) / 3:
                 continue                   # 목차·색인 쪽
             title = next((ln.strip() for ln in lines if kw.search(ln)), f"{i}쪽")
