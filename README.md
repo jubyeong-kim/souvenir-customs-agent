@@ -69,6 +69,24 @@ streamlit run app.py            # 데모 화면
 
 `python agent.py` 와 `python context.py` 는 **API 키 없이도** 돈다. 클론해서 바로 배선을 확인할 수 있다.
 
+### 웹에 올리기 (Streamlit Community Cloud)
+
+저장소를 공개로 올린 뒤 <https://share.streamlit.io> 에서:
+
+1. **New app** → 이 저장소 · 브랜치 `main` · 파일 `app.py`
+2. **Advanced settings → Secrets** 에 키를 넣는다 (저장소에는 넣지 않는다)
+
+   ```toml
+   OPENAI_API_KEY = "sk-..."
+   ```
+3. Deploy
+
+`docs/` 가 저장소에 함께 올라가므로 서버에서 `fetch_docs.py` 를 돌리지 않아도 바로 답한다.
+문서를 새로 받으려면 로컬에서 `python fetch_docs.py` 후 커밋하면 자동 재배포된다.
+
+같은 공유기 안에서만 보여 주면 되는 자리라면 서버를 띄운 채
+`http://<내 IP>:8501` 로 접속하면 된다 (`--server.address 0.0.0.0` 필요).
+
 ## 측정
 
 두 지표를 따로 잰다.

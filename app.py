@@ -5,7 +5,17 @@
 답변 아래 세 칸을 반드시 같이 보여준다: 어느 도구를 불렀는지, 어느 절을 근거로 썼는지,
 검증이 무엇을 잡았는지. 이게 없으면 사용자는 맞는 답과 그럴듯한 답을 구분할 수 없다.
 """
+import os
+
 import streamlit as st
+
+# Streamlit Community Cloud 에서는 키가 환경변수가 아니라 secrets 로 들어온다.
+# agent.py 는 환경변수만 보므로 여기서 한 번 옮겨 준다. 로컬에서는 .env 가 그대로 쓰인다.
+try:
+    if "OPENAI_API_KEY" in st.secrets:
+        os.environ.setdefault("OPENAI_API_KEY", st.secrets["OPENAI_API_KEY"])
+except Exception:
+    pass
 
 import agent, context
 

@@ -249,6 +249,8 @@ D1 이 이 프로젝트에서 가장 값진 발견이다. 사용자가 "주류�
 
 ## 5. 파이프라인 구조도
 
+![파이프라인](docs/pipeline.svg)
+
 ```mermaid
 flowchart TD
     START([문의]) --> C[classify<br/>카테고리만 고른다]

@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" width="900" height="640" font-family="'Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+  <style>
+    .box   { rx:10; stroke-width:1.5 }
+    .t     { font-size:15px; font-weight:600; fill:#1a1a1a }
+    .s     { font-size:11.5px; fill:#555 }
+    .edge  { stroke:#8a8a8a; stroke-width:1.6; fill:none; marker-end:url(#a) }
+    .edge2 { stroke:#c0392b; stroke-width:1.6; fill:none; stroke-dasharray:5 3; marker-end:url(#ar) }
+    .lbl   { font-size:11px; fill:#666 }
+    .lblr  { font-size:11px; fill:#c0392b }
+    .cap   { font-size:12px; fill:#444 }
+    @media (prefers-color-scheme: dark) {
+      .t { fill:#f0f0f0 } .s { fill:#b8b8b8 } .lbl { fill:#aaa } .cap { fill:#ccc }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a8a8a"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+  </defs>
+
+  <text x="30" y="34" class="t" font-size="18">기념품 반입 상담 — 라우팅 파이프라인</text>
+  <text x="30" y="55" class="cap">LangGraph 6노드 · 문의 하나가 왼쪽에서 들어와 오른쪽으로 나간다</text>
+
+  <!-- 문의 -->
+  <rect x="30" y="95" width="130" height="50" class="box" fill="#eceff1" stroke="#90a4ae"/>
+  <text x="95" y="118" class="t" text-anchor="middle" font-size="14">문의</text>
+  <text x="95" y="135" class="s" text-anchor="middle">"소시지 사왔는데…"</text>
+
+  <!-- ① classify -->
+  <rect x="215" y="88" width="185" height="64" class="box" fill="#e3f0fd" stroke="#4a90d9"/>
+  <text x="307" y="110" class="t" text-anchor="middle">① classify</text>
+  <text x="307" y="128" class="s" text-anchor="middle">카테고리만 고른다</text>
+  <text x="307" y="144" class="s" text-anchor="middle">넘길지는 정하지 않는다</text>
+
+  <!-- ② assemble -->
+  <rect x="215" y="215" width="185" height="80" class="box" fill="#e4f3e8" stroke="#4caf7d"/>
+  <text x="307" y="238" class="t" text-anchor="middle">② assemble</text>
+  <text x="307" y="256" class="s" text-anchor="middle">도구 1개 호출 · 절 검색 상위 3</text>
+  <text x="307" y="272" class="s" text-anchor="middle">IDF 가중 · 규정 문서 우선</text>
+  <text x="307" y="288" class="s" text-anchor="middle">점수 0 이면 근거 없음</text>
+
+  <!-- ③ answer -->
+  <rect x="490" y="215" width="185" height="80" class="box" fill="#fdf3dc" stroke="#d9a441"/>
+  <text x="582" y="238" class="t" text-anchor="middle">③ answer</text>
+  <text x="582" y="256" class="s" text-anchor="middle">근거에 있는 말로만 쓴다</text>
+  <text x="582" y="272" class="s" text-anchor="middle">과거 기준은 말하지 않는다</text>
+  <text x="582" y="288" class="s" text-anchor="middle">끝에 (기준일) 부착</text>
+
+  <!-- ④ verify -->
+  <rect x="490" y="360" width="185" height="70" class="box" fill="#fce8e6" stroke="#d9534f"/>
+  <text x="582" y="383" class="t" text-anchor="middle">④ verify</text>
+  <text x="582" y="401" class="s" text-anchor="middle">답변의 숫자를</text>
+  <text x="582" y="417" class="s" text-anchor="middle">근거에서 역추적</text>
+
+  <!-- handoff -->
+  <rect x="215" y="360" width="185" height="70" class="box" fill="#f2f2f2" stroke="#9e9e9e"/>
+  <text x="307" y="383" class="t" text-anchor="middle">넘김 handoff</text>
+  <text x="307" y="401" class="s" text-anchor="middle">지어내지 않는다</text>
+  <text x="307" y="417" class="s" text-anchor="middle">관세청 125 안내 · 도구 0개</text>
+
+  <!-- 답변 -->
+  <rect x="745" y="360" width="125" height="70" class="box" fill="#eceff1" stroke="#90a4ae"/>
+  <text x="807" y="388" class="t" text-anchor="middle" font-size="14">답변</text>
+  <text x="807" y="408" class="s" text-anchor="middle">+ 근거 + 검증</text>
+
+  <!-- 도구 -->
+  <rect x="30" y="215" width="150" height="80" class="box" fill="#f7f7f7" stroke="#bdbdbd" stroke-dasharray="4 3"/>
+  <text x="105" y="236" class="s" text-anchor="middle" font-weight="600">도구 4개</text>
+  <text x="105" y="254" class="s" text-anchor="middle">lookup_duty</text>
+  <text x="105" y="269" class="s" text-anchor="middle">lookup_quarantine</text>
+  <text x="105" y="284" class="s" text-anchor="middle">lookup_cites</text>
+  <text x="105" y="299" class="s" text-anchor="middle">lookup_dutyfree_shop</text>
+
+  <!-- 문서 -->
+  <rect x="30" y="480" width="350" height="120" class="box" fill="#f7f7f7" stroke="#bdbdbd" stroke-dasharray="4 3"/>
+  <text x="50" y="503" class="s" font-weight="600">근거 문서 — 전부 기관에서 받아온 것 (fetch_docs.py)</text>
+  <text x="50" y="524" class="s">면세  duty.md · casebook.md(보조)      관세청</text>
+  <text x="50" y="543" class="s">검역  quarantine.md                          인천공항공사</text>
+  <text x="50" y="562" class="s">멸종위기종  cites.md · cites_items.md   인천세관</text>
+  <text x="50" y="581" class="s">면세점  dutyfree_shop.md                  관세청</text>
+
+  <!-- 측정 -->
+  <rect x="420" y="480" width="450" height="120" class="box" fill="#f7f7f7" stroke="#bdbdbd" stroke-dasharray="4 3"/>
+  <text x="440" y="503" class="s" font-weight="600">측정 — evaluate.py, 평가셋 12건</text>
+  <text x="440" y="524" class="s">도구 호출 적절성 = ②가 부른 도구 집합이 기대와 같은가</text>
+  <text x="440" y="543" class="s">답변 적절성 = 담아야 할 사실 전부 + 금지 표현 0</text>
+  <text x="440" y="562" class="s">기준선 83.3 / 58.3%  →  5회 개선  →  100 / 100%</text>
+  <text x="440" y="581" class="s">한 번에 한 군데만 · 최소 2회 · 2회 연속 통과해야 수정됨</text>
+
+  <!-- edges -->
+  <path d="M160,120 L212,120" class="edge"/>
+  <path d="M307,152 L307,212" class="edge"/>
+  <text x="315" y="178" class="lbl">카테고리</text>
+  <path d="M400,255 L487,255" class="edge"/>
+  <text x="443" y="246" class="lbl" text-anchor="middle">근거 3절</text>
+  <path d="M582,295 L582,357" class="edge"/>
+  <path d="M675,395 L742,395" class="edge"/>
+  <text x="708" y="386" class="lbl" text-anchor="middle">통과</text>
+  <path d="M307,430 L307,455 L807,455 L807,432" class="edge"/>
+  <text x="560" y="450" class="lbl" text-anchor="middle">넘김도 답변이다</text>
+  <path d="M307,295 L307,357" class="edge"/>
+  <text x="315" y="330" class="lbl">근거 0</text>
+  <!-- 범위밖 우회 -->
+  <path d="M215,120 L195,120 L195,340 L250,340 L250,357" class="edge"/>
+  <text x="120" y="180" class="lbl">범위밖</text>
+  <!-- 재작성 -->
+  <path d="M675,380 L710,380 L710,255 L678,255" class="edge2"/>
+  <text x="716" y="318" class="lblr">위반 → 재작성 1회</text>
+  <!-- 도구 연결 -->
+  <path d="M180,255 L212,255" class="edge"/>
+</svg>
