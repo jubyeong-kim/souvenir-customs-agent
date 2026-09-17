@@ -25,6 +25,42 @@ def clean(text: str) -> list[str]:
             if ln.strip() and not NOISE.search(ln)]
 
 
+SEP = re.compile(r"^\|[\s|:-]+\|$")          # |---|---| 같은 구분선
+
+
+def cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def unfold_tables(lines: list[str]) -> list[str]:
+    """표를 `헤더: 값` 줄로 풀어 쓴다. 원래 줄은 그대로 두고 **덧붙인다.**
+
+    표를 파이프 문자열로 납작하게 만든 것은 우리 파이프라인이다. 그러면 모델이 열을
+    못 읽는다 — 검역 표의 「수입금지대상」 열에 「모든 생과실」 이 있는데도
+    바로 위 문장(「모든 식물류는 신고하여 검역을 받아야」)에 끌려
+    **"망고는 신고하면 가능"** 이라고 답했다. 열 이름을 값에 붙여 주면 헷갈릴 여지가 없다.
+    실험기록 #17.
+    """
+    out, header = [], None
+    for i, ln in enumerate(lines):
+        out.append(ln)
+        if not ln.strip().startswith("|"):
+            header = None
+            continue
+        if SEP.match(ln.strip()):
+            prev = lines[i - 1].strip() if i else ""
+            if prev.startswith("|"):
+                head = cells(prev)
+                # 제목 행(칸이 비어 있는 것)은 헤더가 아니다
+                header = head if all(head) and len(head) > 1 else None
+            continue
+        if header and len(cells(ln)) == len(header) and cells(ln) != header:
+            for name, value in zip(header, cells(ln)):
+                if value:
+                    out.append(f"- {name}: {value}")
+    return out
+
+
 def sectionize(lines: list[str]) -> str:
     """`##` 절로 나눈다. 절이 근거 조립의 최소 단위이자 데모에 보여줄 단위다.
 
@@ -114,7 +150,7 @@ def fetch(src: dict) -> str:
     if not text or len(text) < 500:
         raise RuntimeError(f"본문이 너무 짧다 ({len(text or '')}자). "
                            "페이지가 자바스크립트로 그려지거나 차단된 것이다.")
-    body = sectionize(clean(text))
+    body = sectionize(unfold_tables(clean(text)))
 
     # 한 페이지가 여러 영역을 다루는 경우, 필요한 절만 떼어 다른 카테고리에 붙인다.
     # 관세청 여행자 통관 페이지에는 CITES 품목 목록(철갑상어·악어·산호…)이 한 절로 들어

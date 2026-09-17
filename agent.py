@@ -33,6 +33,11 @@ MODEL = os.environ.get("MODEL", "gpt-4.1-mini")
 # 망고·고기까지 되물었다(12건 100% → 91.7%). 프롬프트를 네 번 고쳐도 안 됐다.
 # 한 문의에 한 번 부르는 호출이라 비용 차이가 작다.
 GATE_MODEL = os.environ.get("GATE_MODEL", "gpt-4.1")
+# 답변도 큰 모델을 쓴다. mini 는 근거가 한 절뿐이고 그 절에 「육가공품」 이 명시돼 있어도
+# 「비첸향은 신고 대상에 해당하지 않아 증명서 없이 반입 가능」 이라고 **가부를 뒤집었다**
+# (5회 중 3회). 분류·정규화·근거는 5/5 동일했으므로 흔들린 곳은 이 한 곳이다.
+# 숫자 검증으로는 못 잡는다 — 틀린 것이 숫자가 아니라 판정이다. 실험기록 #17.
+ANSWER_MODEL = os.environ.get("ANSWER_MODEL", "gpt-4.1")
 _client = None
 
 
@@ -212,7 +217,7 @@ def answer(state: State) -> State:
                      + ", ".join(state["violations"])
                      + ". 그 값을 빼거나 [근거]에 있는 값으로 바꿔 다시 쓰세요."})
     r = client().beta.chat.completions.parse(
-        model=MODEL, messages=msgs, response_format=Reply, temperature=0)
+        model=ANSWER_MODEL, messages=msgs, response_format=Reply, temperature=0)
     rep = r.choices[0].message.parsed
     return {"answer": render(rep), "reply": {"결론": rep.결론,
                                              "준비물": rep.준비물,

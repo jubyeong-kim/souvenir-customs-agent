@@ -7,6 +7,7 @@
 
 되묻기가 있으므로 **대화형**이다. 이어서 답하면 앞 턴의 정보를 합쳐 판정한다.
 """
+import html
 import os
 
 import streamlit as st
@@ -83,7 +84,12 @@ for i, (user_text, s) in enumerate(st.session_state.turns):
         rep = s.get("reply") or {}
         if rep.get("결론"):
             # 결론을 먼저, 크게. 긴 줄글은 그 아래로 내린다.
-            st.markdown(f"### {rep['결론']}")
+            # `###` 를 쓰면 제목의 위쪽 여백 때문에 첫 줄이 아바타보다 내려가 어긋난다.
+            # 여백 없는 단락으로 직접 그린다. 모델이 쓴 글이므로 이스케이프한다.
+            st.markdown(
+                "<p style='font-size:1.35rem;font-weight:700;line-height:1.45;"
+                "margin:0 0 .6rem 0'>" + html.escape(rep["결론"]) + "</p>",
+                unsafe_allow_html=True)
             if rep.get("준비물"):
                 st.markdown("**입국할 때 챙기세요**")
                 for item in rep["준비물"]:
@@ -95,7 +101,8 @@ for i, (user_text, s) in enumerate(st.session_state.turns):
 
         label = ("되묻기" if s.get("missing")
                  else "넘김" if not s["tools_called"] else "답변")
-        with st.expander(f"근거와 검증 보기  ·  {label}", expanded=(i == len(st.session_state.turns) - 1)):
+        # 기본은 접힘. 답을 먼저 읽게 하고, 확인하고 싶은 사람만 펼친다.
+        with st.expander(f"근거와 검증 보기  ·  {label}", expanded=False):
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("**① 분류**")
