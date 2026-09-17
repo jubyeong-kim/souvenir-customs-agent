@@ -74,7 +74,10 @@ def answer(state: State) -> State:
     ev = state["evidence"]
     asof = max((s["기준일"] for s in ev), default="기준일 미상")
     body = "\n\n".join(f"[{s['제목']}]\n{s['본문']}" for s in ev)
-    system = prompts.ANSWER.format(evidence=body, asof=asof)
+    al = context.aliases(state["query"])
+    system = prompts.ANSWER.format(
+        evidence=body, asof=asof,
+        aliases="\n".join(f"- 질문의 '{k}' = 근거의 '{v}'" for k, v in al) or "- (없음)")
     system += prompts.CATEGORY_NOTE.get(state["category"], "")
 
     msgs = [{"role": "system", "content": system},

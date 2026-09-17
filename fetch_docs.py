@@ -114,7 +114,21 @@ def fetch(src: dict) -> str:
     if not text or len(text) < 500:
         raise RuntimeError(f"본문이 너무 짧다 ({len(text or '')}자). "
                            "페이지가 자바스크립트로 그려지거나 차단된 것이다.")
-    return sectionize(clean(text))
+    body = sectionize(clean(text))
+
+    # 한 페이지가 여러 영역을 다루는 경우, 필요한 절만 떼어 다른 카테고리에 붙인다.
+    # 관세청 여행자 통관 페이지에는 CITES 품목 목록(철갑상어·악어·산호…)이 한 절로 들어
+    # 있는데, 그 목록이 없으면 「캐비어 가져올 수 있나요」에 답할 근거가 없다.
+    # 페이지를 통째로 복사하는 대신 절 단위로 가져온다. 실험기록 #10.
+    if src.get("절키워드"):
+        kw = re.compile("|".join(src["절키워드"]))
+        kept = [b for b in body.split("\n\n## ") if kw.search(b)]
+        if not kept:
+            raise RuntimeError(f"절키워드 {src['절키워드']} 에 걸리는 절이 없다.")
+        body = "\n\n## ".join(kept)
+        if not body.startswith("## "):
+            body = "## " + body
+    return body
 
 
 def header(src: dict) -> str:

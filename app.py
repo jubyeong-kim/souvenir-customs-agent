@@ -78,7 +78,12 @@ if query:
         else:
             st.warning("호출 없음 — 넘김")
 
-    st.markdown("**③ 근거로 쓴 문서 부분**")
+    al = context.aliases(query)
+    if al:
+        st.markdown("**③ 용어 연결** — 질문의 말을 문서의 말로 이은 표 (사전에 적힌 것, 모델 추측 아님)")
+        st.info(" · ".join(f"{k} → {v}" for k, v in al))
+
+    st.markdown("**④ 근거로 쓴 문서 부분**")
     if not s["evidence"]:
         st.caption("근거를 찾지 못해 답하지 않았습니다. 지어내는 대신 넘겼습니다.")
     for sec in s["evidence"]:
@@ -86,7 +91,7 @@ if query:
             st.text(sec["본문"])
             st.caption(f"출처: {sec['출처']}")
 
-    st.markdown("**④ 검증** — 답변의 숫자가 근거에 있는지 역추적")
+    st.markdown("**⑤ 검증** — 답변의 숫자가 근거에 있는지 역추적")
     if s["violations"]:
         st.error(f"근거에 없는 숫자: {', '.join(s['violations'])}"
                  + ("  (재작성했으나 남음)" if s.get("retried") else ""))

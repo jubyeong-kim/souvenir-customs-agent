@@ -37,6 +37,7 @@ SYNONYMS = {
     "과일": "생과실", "망고": "생과실", "바나나": "생과실",
     "지갑": "가공품", "핸드백": "가공품", "가방": "가공품", "벨트": "가공품",
     "가죽": "부분품", "상아": "부분품", "뿔": "부분품",
+    "캐비어": "철갑상어", "자라": "거북", "뱀": "코브라",   # 문서는 종 이름으로만 쓴다
     "한도": "면세범위", "얼마": "면세범위", "세금": "관세",
 }
 
@@ -52,6 +53,21 @@ def expand(text: str) -> str:
             if word.startswith(key):
                 extra.append(doc_word)
     return text + " " + " ".join(extra)
+
+
+def aliases(text: str) -> list[tuple[str, str]]:
+    """이 문의에 실제로 적용된 «사람 말 → 문서 말» 짝.
+
+    근거에 `철갑상어` 가 있어도 모델은 «캐비어 = 철갑상어 알» 을 스스로 잇지 않는다.
+    문서에 없는 연결이므로 옳은 태도다. 그래서 우리가 만든 연결임을 밝혀서 건넨다 —
+    모델이 지어낸 것이 아니라 사전에 적힌 것이고, 데모 화면에도 그대로 보인다.
+    """
+    seen = []
+    for word in text.split():
+        for key, doc_word in SYNONYMS.items():
+            if word.startswith(key) and (key, doc_word) not in seen:
+                seen.append((key, doc_word))
+    return seen
 
 
 def tokenize(text: str) -> list[str]:

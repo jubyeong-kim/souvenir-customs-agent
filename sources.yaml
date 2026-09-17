@@ -59,3 +59,17 @@
   소관기관: 인천본부세관
   갱신주기: 2~3년 (CITES 당사국총회)
   url: https://www.customs.go.kr/incheon/cm/cntnts/cntntsView.do?mi=3579&cntntsId=2360
+
+# 「캐비어 가져올 수 있나요」에 답하려면 CITES 품목 목록(철갑상어·악어·산호…)이 필요하다.
+# 그 목록을 싣고 있는 페이지는 관세청 여행자 통관 안내 하나뿐이었고(다른 세관 페이지는
+# 목록이 짧아 철갑상어가 없다), 그 페이지는 이미 duty.md 로 면세에 쓰고 있다.
+# 그래서 페이지를 통째로 복사하지 않고 **CITES 절만** 떼어 온다. 실험기록 #10.
+- 파일: cites_species.md
+  제목: CITES 규제 품목 목록 (여행자 통관 안내 발췌)
+  카테고리: 멸종위기종
+  소관기관: 관세청
+  갱신주기: 2~3년 (CITES 당사국총회)
+  # "CITES" 로 걸면 가산세 절까지 딸려온다(그 절도 CITES 를 언급한다).
+  # 품목 목록 절에만 있는 말로 좁힌다.
+  절키워드: ["철갑상어"]
+  url: https://www.customs.go.kr/kcs/cm/cntnts/cntntsView.do?mi=2837&cntntsId=829
