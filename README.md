@@ -32,7 +32,7 @@
 |---|---|---|---|
 | `면세` | 면세 범위, 초과 시 과세, 자진신고 감면, 미신고 가산세 | `duty.md`, `casebook.md` | `lookup_duty` |
 | `검역` | 축산물·식물·야생동물 반입 가부와 검역 신고 | `quarantine.md` | `lookup_quarantine` |
-| `멸종위기종` | CITES 규제 범위(가공품 포함)와 허가·처벌 | `cites.md`, `cites_items.md` | `lookup_cites` |
+| `멸종위기종` | CITES 규제 범위(가공품 포함)와 허가·처벌 | `cites.md`, `cites_items.md`, `cites_species.md` | `lookup_cites` |
 | `면세점` | 입국장면세점 구매 한도와 공제 순서 | `dutyfree_shop.md` | `lookup_dutyfree_shop` |
 | `범위밖` | 넘김 — 항공사 수하물, 비자, 출국 반출, 상대국 규정 | 없음 | 부르지 않음 |
 
@@ -116,10 +116,13 @@ streamlit run app.py            # 데모 화면 (대화형)
 
 ## 측정
 
-두 지표를 따로 잰다.
+세 지표를 따로 잰다.
 
-- **도구 호출 적절성** — 실제 호출한 도구 집합이 기대와 정확히 일치하면 1점. 넘기기 문항은 빈 집합이 정답이다.
+- **도구 호출 적절성** — 실제 호출한 도구 집합이 기대와 정확히 일치하면 1점. 넘기기·되묻기 문항은 빈 집합이 정답이다.
 - **답변 적절성** — `must_include` 를 전부 담고 `must_not` 을 하나도 어기지 않으면 1점. 채점기는 표현이 아니라 사실을 본다.
+- **안정성** — `--repeat N` 으로 N회 돌려 **같은 질문에 같은 답을 주는지** 본다.
+  앞의 둘은 «맞는가》를, 이것은 «흔들리지 않는가》를 본다.
+  배포 후에 같은 질문이 5회 중 3회 틀린 적이 있는데 **평균으로는 보이지 않았다.**
 
 채점기를 쓰기 전에 `--self-check` 로 **채점기 자체를 검증**한다. 모범 답안·틀린 답안·부분 답안 셋을 넣어
 각각 만점·전부위반·부분점수가 나오는지 본다. 여기서 안 맞으면 이후 숫자는 전부 무의미하다.
@@ -135,8 +138,11 @@ streamlit run app.py            # 데모 화면 (대화형)
 | `context.py` | 절 쪼개기 · 검색 · 카테고리별 도구 4개 |
 | `prompts.py` | 분류 지침 · 답변 규칙 · 표기 규칙 |
 | `agent.py` | LangGraph 파이프라인 |
-| `evaluate.py` | 두 지표 + 채점기 자체 검증 |
-| `app.py` | Streamlit 데모 |
+| `evaluate.py` | 세 지표 + 채점기 자체 검증 (`--repeat` 로 분산) |
+| `app.py` | Streamlit 데모 (대화형) |
+| `probe_ambiguous.py` | 경계·애매·제품명 24건 — 채점하지 않고 어디로 가는지 본다 |
+| `probe_multiturn.py` | 되묻고 이어지는 대화 5건 |
+| `capture_demo.py` | 데모 캡처를 `docs/demo.png` 로 생성 |
 | `data/goldenset.json` | 평가셋 12건 (채점용) |
 | `data/fewshot.json` | 프롬프트 예시 4건 (채점하지 않음) |
 
