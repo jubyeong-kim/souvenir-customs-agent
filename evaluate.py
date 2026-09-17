@@ -22,12 +22,20 @@ GOLDEN = ROOT / "data" / "goldenset.json"
 
 
 class Grade(BaseModel):
-    담은_사실: list[str] = Field(description="must_include 중 답변이 실제로 담은 것")
-    어긴_금지: list[str] = Field(description="must_not 중 답변이 어긴 것")
+    """항목마다 참/거짓으로만 받는다.
+
+    처음에는 "담은 사실 목록"을 문자열로 받았더니 채점기가 목록에 판단 근거 문장을
+    넣어 버려서(어긴 것이 없을 때 "없음" 한 줄, 안 어긴 항목에 "~라고 답하지 않았다")
+    개수 비교가 전부 어긋났다. 번호대로 참/거짓만 받으면 그 여지가 없다.
+    """
+    담았는가: list[bool] = Field(description="[반드시 담아야 할 사실] 항목 순서대로 true/false")
+    어겼는가: list[bool] = Field(description="[말하면 안 되는 것] 항목 순서대로 true/false")
     이유: str
 
 
 GRADER = """너는 상담 답변을 채점한다. **표현이 아니라 사실**을 본다.
+
+각 목록의 항목 **번호 순서대로** true/false 만 답한다. 항목 수와 답 개수는 반드시 같다.
 
 - 같은 사실을 다른 말로 썼으면 담은 것이다. "800달러"와 "미화 800불"은 같다.
 - 조건이 둘인 사실(예: 2L 이하 그리고 400달러 이하)은 **둘 다** 있어야 담은 것이다.
@@ -48,13 +56,19 @@ def grade(case: dict, answer: str) -> Grade:
     r = agent.client().beta.chat.completions.parse(
         model=os.environ.get("GRADER_MODEL", agent.MODEL),
         messages=[{"role": "user", "content": GRADER.format(
-            must_include="\n".join(f"- {x}" for x in case["must_include"]) or "- (없음)",
-            must_not="\n".join(f"- {x}" for x in case["must_not"]) or "- (없음)",
+            must_include="\n".join(f"{i}. {x}" for i, x in enumerate(case["must_include"], 1)) or "(없음)",
+            must_not="\n".join(f"{i}. {x}" for i, x in enumerate(case["must_not"], 1)) or "(없음)",
             answer=answer)}],
         response_format=Grade,
         temperature=0,
     )
-    return r.choices[0].message.parsed
+    g = r.choices[0].message.parsed
+    # 길이가 어긋나면 채점이 성립하지 않는다. 조용히 넘기면 점수가 거짓이 된다.
+    def fit(flags: list[bool], n: int) -> list[bool]:
+        return (flags + [False] * n)[:n]
+    g.담았는가 = fit(g.담았는가, len(case["must_include"]))
+    g.어겼는가 = fit(g.어겼는가, len(case["must_not"]))
+    return g
 
 
 def score_case(case: dict, state: dict) -> dict:
@@ -63,8 +77,12 @@ def score_case(case: dict, state: dict) -> dict:
 
     if case["must_include"] or case["must_not"]:
         g = grade(case, state["answer"])
-        answer_ok = (len(g.담은_사실) == len(case["must_include"]) and not g.어긴_금지)
-        detail = {"담음": g.담은_사실, "어김": g.어긴_금지, "이유": g.이유}
+        answer_ok = all(g.담았는가) and not any(g.어겼는가)
+        detail = {
+            "빠뜨림": [x for x, ok in zip(case["must_include"], g.담았는가) if not ok],
+            "어김": [x for x, bad in zip(case["must_not"], g.어겼는가) if bad],
+            "이유": g.이유,
+        }
     else:                                   # 넘기기 문항: 넘겼으면 그것으로 맞다
         answer_ok = not state["tools_called"]
         detail = {"이유": "넘기기 문항"}
@@ -104,11 +122,10 @@ def report(rows: list[dict]) -> None:
         if not r["도구"]:
             why.append(f"도구 {r['호출']} != 기대 {r['기대']}")
         if not r["답변"]:
-            if r["채점"].get("어김"):
-                why.append(f"금지 어김 {r['채점']['어김']}")
-            missing = r["채점"].get("담음")
-            if missing is not None:
-                why.append(f"사실 {len(missing)}개만 담음")
+            for x in r["채점"].get("어김", []):
+                why.append(f"금지 어김: {x}")
+            for x in r["채점"].get("빠뜨림", []):
+                why.append(f"빠뜨림: {x}")
         if r["위반"]:
             why.append(f"근거없는 숫자 {r['위반']}")
         print(f"    {r['id']:<4} [{r['카테고리']}] {r['질문'][:34]}\n         {' / '.join(why)}")
@@ -128,16 +145,16 @@ def self_check() -> int:
 
     g1, g2, g3 = grade(case, good), grade(case, bad), grade(case, partial)
     checks = [
-        (len(g1.담은_사실) == 2 and not g1.어긴_금지, "모범 답안이 만점이 아니다", g1),
-        (len(g2.어긴_금지) == 2, "틀린 답안의 금지 위반을 못 잡는다", g2),
-        (len(g3.담은_사실) == 1, "조건 하나만 담은 답을 만점 처리한다", g3),
+        (all(g1.담았는가) and not any(g1.어겼는가), "모범 답안이 만점이 아니다", g1),
+        (all(g2.어겼는가), "틀린 답안의 금지 위반을 못 잡는다", g2),
+        (g3.담았는가 == [True, False], "조건 하나만 담은 답을 만점 처리한다", g3),
     ]
     failed = 0
     for ok, msg, g in checks:
-        print(("  OK  " if ok else "  FAIL ") + (msg if not ok else "채점기 정상"))
+        print(("  OK  채점기 정상" if ok else f"  FAIL {msg}"))
         if not ok:
             failed += 1
-            print(f"        담음={g.담은_사실} 어김={g.어긴_금지} 이유={g.이유}")
+            print(f"        담았는가={g.담았는가} 어겼는가={g.어겼는가} 이유={g.이유}")
     return failed
 
 

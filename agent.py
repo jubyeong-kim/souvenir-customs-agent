@@ -98,7 +98,10 @@ def verify(state: State) -> State:
 
     근거 전체를 한 덩어리로 놓고 대조한다. 쉼표는 표기 규칙 때문에 붙으므로 떼고 본다.
     """
-    haystack = " ".join(s["본문"] for s in state["evidence"])
+    # 기준일은 우리가 붙이라고 지시한 것이므로 근거에 있는 값으로 센다.
+    # 처음엔 빼먹어서 "(2026-09-17 기준)" 의 09·17 을 위반으로 잡고 재작성까지 했다.
+    haystack = " ".join([s["본문"] for s in state["evidence"]]
+                        + [s["기준일"] for s in state["evidence"]])
     haystack_nums = {n.replace(",", "") for n in NUM.findall(haystack)}
     bad = []
     for n in NUM.findall(state["answer"]):

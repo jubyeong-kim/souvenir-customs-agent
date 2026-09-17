@@ -45,3 +45,13 @@
   최대쪽: 10
   쪽키워드: ["술, 담배의 면세기준", "여행자 휴대품", "휴대품 면세", "자진신고"]
   url: https://www.customs.go.kr/common/nttFileDownload.do?fileKey=3b03db355afff4cb9eac21dcda749520
+
+# cites.md 는 협약 개요·허가서·처벌만 담고 있어 "악어가죽 지갑" 같은 실제 품목 문의에
+# 걸릴 말이 한 개도 없었다 (악어·지갑·가죽·핸드백·가공품 전부 0건 → 검색 점수 0 → 넘김).
+# 과제가 말한 "연결할 부분이 없는 카테고리는 문서를 보강한다" 가 이 경우다. 실험기록 #1.
+- 파일: cites_items.md
+  제목: CITES 부분품·가공품 목록과 부속서 구분
+  카테고리: 멸종위기종
+  소관기관: 인천본부세관
+  갱신주기: 2~3년 (CITES 당사국총회)
+  url: https://www.customs.go.kr/incheon/cm/cntnts/cntntsView.do?mi=3579&cntntsId=2360
