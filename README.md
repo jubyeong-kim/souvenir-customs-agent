@@ -89,6 +89,9 @@ python evaluate.py --self-check # 채점기 자체를 먼저 검증한다
 python evaluate.py              # 평가셋 12건 측정
 python evaluate.py --repeat 3   # 3회 돌려 **안정성**(분산)까지 본다
 
+python evaluate_holdout.py      # 검증셋 29건 (경로·도구·답변)
+python evaluate_holdout.py --file data/holdout_외부.json   # 남이 만든 질문 (비어 있음)
+
 python probe_ambiguous.py       # 어려운 문의 24건 (경계·애매·제품명) — 채점하지 않는다
 python probe_multiturn.py       # 되묻고 이어지는 대화 5건
 streamlit run app.py            # 데모 화면 (대화형)
@@ -145,6 +148,9 @@ streamlit run app.py            # 데모 화면 (대화형)
 | `capture_demo.py` | 데모 캡처를 `docs/demo.png` 로 생성 |
 | `data/goldenset.json` | 평가셋 12건 (채점용) |
 | `data/fewshot.json` | 프롬프트 예시 4건 (채점하지 않음) |
+| `data/holdout.json` | 검증셋 29건 — 경로·되묻기·멀티턴까지 채점 |
+| `data/holdout_외부.json` | **남이 만든 질문 자리** (비어 있는 것이 정상) |
+| `evaluate_holdout.py` | 검증셋 채점 — 골든셋과 방식이 다르다 (파일 머리에 이유) |
 
 ## 주의
 
