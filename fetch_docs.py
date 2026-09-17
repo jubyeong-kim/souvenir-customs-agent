@@ -66,6 +66,39 @@ def sectionize(lines: list[str]) -> str:
     return "\n\n".join(out)
 
 
+TOC = re.compile(r"^\s*\d+\s*$")          # 목차 페이지는 쪽번호만 있는 줄이 많다
+
+
+def fetch_pdf(src: dict) -> str:
+    """상담 사례집 같은 PDF 에서 주제에 맞는 쪽만 뽑는다.
+
+    전체를 다 넣지 않는 이유: 1,000쪽을 통째로 절로 쪼개면 검색이 엉뚱한 쪽을 물어 온다.
+    ponytail: 키워드로 쪽을 고른다. 사례가 모자라면 `쪽키워드` 만 넓히면 된다.
+    """
+    import pymupdf                        # PDF 출처가 있을 때만 필요하다
+
+    r = requests.get(src["url"], headers=UA, timeout=120)
+    r.raise_for_status()
+    # 이 사례집은 띄어쓰기 글리프가 한자로 추출된다. 두 글자뿐이라 그것만 되돌린다.
+    # ponytail: 다른 PDF 를 넣었는데 글자가 깨지면 여기에 추가한다.
+    SPACE_GLYPH = str.maketrans({"堺": " ", "埑": " "})
+    kw = re.compile("|".join(src["쪽키워드"]))
+    blocks = []
+    with pymupdf.open(stream=r.content, filetype="pdf") as doc:
+        for i, page in enumerate(doc):
+            text = page.get_text().translate(SPACE_GLYPH).strip()
+            lines = [ln for ln in text.splitlines() if ln.strip()]
+            if not kw.search(text) or len(lines) < 5:
+                continue
+            if sum(bool(TOC.match(ln)) for ln in lines) > len(lines) / 3:
+                continue                   # 목차·색인 쪽
+            title = next((ln.strip() for ln in lines if kw.search(ln)), f"{i}쪽")
+            blocks.append(f"## 상담사례 — {title[:40]}\n\n" + "\n".join(lines))
+    if not blocks:
+        raise RuntimeError("주제에 맞는 쪽을 못 찾았다. 쪽키워드를 넓힌다.")
+    return "\n\n".join(blocks[: src.get("최대쪽", 12)])
+
+
 def fetch(src: dict) -> str:
     r = requests.get(src["url"], headers=UA, timeout=30)
     r.raise_for_status()
@@ -74,15 +107,17 @@ def fetch(src: dict) -> str:
     if not text or len(text) < 500:
         raise RuntimeError(f"본문이 너무 짧다 ({len(text or '')}자). "
                            "페이지가 자바스크립트로 그려지거나 차단된 것이다.")
-    body = sectionize(clean(text))
-    head = (f"# {src['제목']}\n\n"
+    return sectionize(clean(text))
+
+
+def header(src: dict) -> str:
+    return (f"# {src['제목']}\n\n"
             f"- 출처: {src['url']}\n"
             f"- 소관기관: {src['소관기관']}\n"
             f"- 받은 날짜: {date.today()}\n"
             f"- 갱신주기: {src['갱신주기']}\n\n"
             f"> 이 문서는 fetch_docs.py 가 위 출처에서 그대로 받아온 것이다. 손으로 고치지 않는다.\n\n"
             f"---\n\n")
-    return head + body
 
 
 def main(only: str | None = None) -> int:
@@ -94,7 +129,8 @@ def main(only: str | None = None) -> int:
             continue
         path = DOCS / src["파일"]
         try:
-            path.write_text(fetch(src), encoding="utf-8")
+            body = fetch_pdf(src) if src.get("종류") == "pdf" else fetch(src)
+            path.write_text(header(src) + body, encoding="utf-8")
             print(f"  OK  {src['파일']:<18} {len(path.read_text(encoding='utf-8')):>6}자  {src['카테고리']}")
         except Exception as e:
             failed += 1
