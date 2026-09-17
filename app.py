@@ -40,17 +40,21 @@ with st.sidebar:
     st.divider()
     st.caption("입국 시 반입 기준만 다룹니다. 출국 반출·상대국 규정은 범위 밖입니다.")
 
+# 버튼에는 짧은 이름표만 보이고, 실제로 들어가는 문장은 오른쪽이다.
+# 긴 문장을 그대로 label 로 쓰면 좁은 칸에서 "면세 한도 넘으…" 처럼 잘려 무슨 예시인지 안 보인다.
 EXAMPLES = [
-    "면세 한도 넘으면 세금 얼마나 더 내나요?",
-    "파리에서 소시지 사왔는데 들고 들어와도 되나요?",
-    "악어가죽 지갑 기념품으로 샀는데 괜찮을까요?",
-    "입국장면세점에서 얼마까지 살 수 있나요?",
-    "비행기 수하물 몇 kg까지 실을 수 있어요?",
+    ("면세 한도 초과", "면세 한도 넘으면 세금 얼마나 더 내나요?"),
+    ("소시지 반입", "파리에서 소시지 사왔는데 들고 들어와도 되나요?"),
+    ("악어가죽 지갑", "악어가죽 지갑 기념품으로 샀는데 괜찮을까요?"),
+    ("입국장면세점", "입국장면세점에서 얼마까지 살 수 있나요?"),
+    ("예전엔 2병?", "예전엔 술 2병까지 됐잖아요. 지금은 어떻게 되나요?"),
+    ("수하물 무게 ↩", "비행기 수하물 몇 kg까지 실을 수 있어요?"),
 ]
-cols = st.columns(len(EXAMPLES))
-for col, ex in zip(cols, EXAMPLES):
-    if col.button(ex[:9] + "…", help=ex, use_container_width=True):
-        st.session_state["query"] = ex
+st.caption("예시를 눌러 보세요. ↩ 표시는 근거 자료에 답이 없어 **넘기는** 문의입니다.")
+for row in range(0, len(EXAMPLES), 3):
+    for col, (label, q) in zip(st.columns(3), EXAMPLES[row:row + 3]):
+        if col.button(label, help=q, use_container_width=True):
+            st.session_state["query"] = q
 
 query = st.text_input("문의 내용", key="query", placeholder="예: 술 몇 병까지 면세되나요?")
 
