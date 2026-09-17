@@ -49,6 +49,8 @@ class State(TypedDict, total=False):
     query: str
     category: str
     missing: list
+    terms: list
+    normalized: bool
     evidence: list
     tools_called: list
     answer: str
@@ -58,6 +60,10 @@ class State(TypedDict, total=False):
 
 class Category(BaseModel):
     카테고리: str = Field(description="면세 | 검역 | 멸종위기종 | 면세점 | 범위밖")
+
+
+class Terms(BaseModel):
+    문서어휘: list[str] = Field(description="DOC_TERMS 안의 말만. 없으면 빈 목록")
 
 
 class Gate(BaseModel):
@@ -113,8 +119,32 @@ def ask(state: State) -> State:
 
 # ──────────────────── ② 근거 조립 (도구) ────────────────────
 def assemble(state: State) -> State:
-    evidence, tools = context.assemble(state["category"], state["query"])
+    evidence, tools = context.assemble(state["category"], state["query"],
+                                       state.get("terms"))
     return {"evidence": evidence, "tools_called": tools}
+
+
+def normalize(state: State) -> State:
+    """사람이 말한 물건을 문서 어휘로 바꾼다. **조회 전에 항상** 부른다.
+
+    사람은 「비첸향」·「하몽」·「크로커딜」 로 말하고 문서는 「육가공품」·「악어」 로 쓴다.
+    브랜드를 손으로 사전에 적는 것은 끝이 없어서(그게 코드 관문이다) 모델에게
+    **닫힌 목록 안에서 고르게** 한다. 목록 밖은 못 고르니 지어낼 여지가 없다.
+
+    처음에는 «근거를 못 찾았을 때만» 불렀다. 그랬더니 「하몽」 이 `면세` 로 분류된 경우
+    면세 문서에서 근거가 **찾아지긴 해서** 정규화가 돌지 않고, 검역증명서 안내가 빠졌다.
+    조회 전에 항상 돌려야 그 결과를 교차 조회(CROSS_CHECK)에도 쓸 수 있다.
+    """
+    r = client().beta.chat.completions.parse(
+        model=GATE_MODEL,
+        messages=[{"role": "system",
+                   "content": prompts.NORMALIZE.format(
+                       terms=", ".join(context.DOC_TERMS), query=state["query"])}],
+        response_format=Terms,
+        temperature=0,
+    )
+    picked = [t for t in r.choices[0].message.parsed.문서어휘 if t in context.DOC_TERMS]
+    return {"terms": picked, "normalized": True}
 
 
 # ───────────────────────── ③ 답변 ─────────────────────────
@@ -174,7 +204,7 @@ def route_after_classify(state: State) -> str:
 
 
 def route_after_gate(state: State) -> str:
-    return "ask" if state["missing"] else "assemble"
+    return "ask" if state["missing"] else "normalize"
 
 
 def route_after_assemble(state: State) -> str:
@@ -195,14 +225,15 @@ def mark_retry(state: State) -> State:
 def build():
     g = StateGraph(State)
     for name, fn in [("classify", classify), ("gate", gate), ("ask", ask),
-                     ("assemble", assemble), ("answer", answer),
+                     ("assemble", assemble), ("normalize", normalize), ("answer", answer),
                      ("verify", verify), ("handoff", handoff), ("mark_retry", mark_retry)]:
         g.add_node(name, fn)
     g.add_edge(START, "classify")
     g.add_conditional_edges("classify", route_after_classify,
                             {"gate": "gate", "handoff": "handoff"})
     g.add_conditional_edges("gate", route_after_gate,
-                            {"ask": "ask", "assemble": "assemble"})
+                            {"ask": "ask", "normalize": "normalize"})
+    g.add_edge("normalize", "assemble")
     g.add_conditional_edges("assemble", route_after_assemble,
                             {"answer": "answer", "handoff": "handoff"})
     g.add_edge("answer", "verify")
@@ -218,7 +249,8 @@ GRAPH = build()
 
 def run(query: str) -> State:
     return GRAPH.invoke({"query": query, "evidence": [], "tools_called": [],
-                         "violations": [], "retried": False, "missing": []})
+                         "violations": [], "retried": False, "missing": [],
+                         "terms": [], "normalized": False})
 
 
 def demo():
@@ -233,10 +265,10 @@ def demo():
     assert route_after_classify({"category": "범위밖"}) == "handoff"
     assert route_after_classify({"category": "면세"}) == "gate"
     assert route_after_gate({"missing": ["용량"]}) == "ask"
-    assert route_after_gate({"missing": []}) == "assemble"
+    assert route_after_gate({"missing": []}) == "normalize"
+    assert route_after_assemble({"evidence": []}) == "handoff"
     # 되물을 때는 도구를 하나도 부르지 않는다
     assert ask({"query": "술 사왔어요", "missing": ["용량", "금액"]})["tools_called"] == []
-    assert route_after_assemble({"evidence": []}) == "handoff"
     assert route_after_verify({"violations": ["600"], "retried": True}) == END
     assert handoff({"query": "수하물 몇 kg"})["tools_called"] == []
     print("agent.py OK — 그래프 배선과 검증 규칙 통과 (API 호출 없음)")

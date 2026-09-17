@@ -42,6 +42,27 @@ SYNONYMS = {
 }
 
 
+# 문서가 실제로 쓰는 품목·제도 어휘. **닫힌 목록**이다.
+# 사람은 「비첸향」·「하몽」·「크로커딜」 처럼 브랜드와 외래어로 말한다. 그걸 사전에
+# 적어 넣는 것은 끝이 없다 — 대신 모델에게 **이 목록 안에서 고르게** 한다(agent.normalize).
+# 목록 밖은 못 고르므로 지어낼 여지가 없고, 고른 결과는 데모 화면에 그대로 보인다.
+# 여기 있는 말은 전부 docs/ 에서 확인한 것이다. 문서에 없는 말을 넣으면 검색이 못 찾는다.
+# 품목 어휘 — **무엇을 가져오는가.** 근거 절을 고를 때 이것으로만 거른다.
+ITEM_TERMS = [
+    "육류", "육가공품", "유가공품", "알가공품", "생과실", "열매채소", "식물", "묘목",
+    "농축수산물", "주류", "궐련", "니코틴용액", "향수",
+    "부분품", "가공품", "가죽", "박제", "모피", "상아", "악어", "산호", "철갑상어",
+    "코끼리", "호랑이", "거북", "웅담", "사향", "한약", "의약품",
+]
+
+# 제도 어휘 — **무엇을 묻는가.** 검색어로는 쓰되 **절을 거르는 데는 쓰지 않는다.**
+# 처음엔 같이 걸렀다가 「한도 넘은 거 신고 안 하면」 문의에서 `가산세` 절만 남고
+# 나란히 있던 「자진신고 30% 경감」 절이 빠져 D3 가 깨졌다(100 → 91.7%). 실험기록 #14.
+RULE_TERMS = ["검역증명서", "면세범위", "자진신고", "가산세", "입국장면세점"]
+
+DOC_TERMS = ITEM_TERMS + RULE_TERMS
+
+
 def expand(text: str) -> str:
     """질문에 문서의 말을 덧붙인다. 원래 말은 지우지 않는다 — 둘 다 걸리는 편이 낫다.
 
@@ -203,10 +224,17 @@ TOOL_NAMES = {k: f.__name__ for k, f in TOOLS.items()}
 #
 # 실험기록 #9 · #11.
 CROSS_CHECK = {
-    "검역": ("소시지", "햄", "육포", "장조림", "통조림", "육류", "고기", "쇠고기", "돼지고기",
+    # 정규화(agent.normalize)가 돌려주는 문서 어휘를 먼저 적는다. 브랜드·외래어는
+    # 사전에 없지만 정규화를 거치면 이 말로 바뀌어 들어온다.
+    "검역": ("육가공품", "유가공품", "알가공품", "생과실", "열매채소", "묘목", "농축수산물",
+             "검역증명서",
+             "소시지", "햄", "육포", "장조림", "통조림", "육류", "고기", "쇠고기", "돼지고기",
              "닭고기", "양고기", "우유", "치즈", "버터", "요거트", "계란", "달걀",
              "과일", "망고", "두리안", "씨앗", "묘목", "화분", "녹용", "생과일"),
-    "멸종위기종": ("악어", "뱀가죽", "상아", "코끼리", "호랑이", "표범", "산호", "거북",
+    # 「가공품」·「부분품」 은 넣지 않는다 — 「육가공품」 에 부분 일치해서 검역 문의까지
+    # CITES 를 불렀다. 종 이름으로만 건다.
+    "멸종위기종": ("철갑상어", "웅담", "사향",
+                   "악어", "뱀가죽", "상아", "코끼리", "호랑이", "표범", "산호", "거북",
                    "자단", "웅담", "사향", "서각", "호골", "철갑상어", "캐비어",
                    "모피", "박제", "가죽", "파충류"),
     # 기본 면세범위와 별도로 한도가 따로 있는 품목. 면세점·검역 쪽에서 물어도 이 한도를 함께 봐야 한다.
@@ -221,21 +249,34 @@ def cross_hits(query: str, skip: str) -> list[str]:
             if cat != skip and any(w in query for w in words)]
 
 
-def assemble(category: str, query: str) -> tuple[list[dict], list[str]]:
+def assemble(category: str, query: str, terms: list[str] | None = None
+             ) -> tuple[list[dict], list[str]]:
     """분류된 카테고리를 보되, 물건 자체가 막히는 품목이면 그 영역도 같이 본다.
 
+    `terms` 는 `agent.normalize` 가 문서 어휘로 바꿔 준 말. 검색어에 덧붙인다.
     반환: (근거 절, 호출한 도구 이름)
     """
     tool = TOOLS.get(category)
     if tool is None:                       # 범위 밖 — 도구를 하나도 부르지 않는다
         return [], []
 
-    evidence, tools = tool(query), [tool.__name__]
-    for extra in cross_hits(query, skip=category):
-        more = TOOLS[extra](query)
+    search_query = query + " " + " ".join(terms) if terms else query
+    evidence, tools = tool(search_query), [tool.__name__]
+    for extra in cross_hits(search_query, skip=category):
+        more = TOOLS[extra](search_query)
         if more:
             evidence += more
             tools.append(TOOLS[extra].__name__)
+
+    # 정규화가 품목을 특정했으면 **그 말이 들어 있는 절만** 근거로 쓴다.
+    # 「비첸향 → 육가공품」 인데 식물 검역 절이 근거에 같이 들어오면, 답변 모델이
+    # 그쪽을 골라 "비첸향은 식물류" 라고 답했다. 프롬프트로 네 번 막아도 안 됐다 —
+    # 충돌하는 절을 애초에 주지 않는 편이 확실하다. 실험기록 #13.
+    items = [t for t in (terms or []) if t in ITEM_TERMS]
+    if items:
+        kept = [e for e in evidence if any(t in e["본문"] for t in items)]
+        if kept:
+            evidence = kept
     return evidence, tools
 
 
