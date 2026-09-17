@@ -36,6 +36,31 @@ GATE_MODEL = os.environ.get("GATE_MODEL", "gpt-4.1")
 _client = None
 
 
+def history_block(state: State) -> str:
+    """이전 대화를 **따로** 넘긴다. 이번 발화에 이어 붙이지 않는다.
+
+    한 덩어리로 주면 봇이 이전 질문에 답한다 — 모두몰 때 1턴 78% / 2턴 47% 였고
+    그 차이의 큰 몫이 이것이었다. (chatbot/PLAYBOOK.md 4-④)
+    """
+    h = state.get("history") or []
+    if not h:
+        return ""
+    lines = []
+    for user, bot in h[-3:]:                    # 세 턴이면 충분하다. 길면 배경이 주제를 덮는다
+        lines.append(f"- 사용자: {user}")
+        lines.append(f"- 상담원: {bot.splitlines()[0][:120]}")
+    return prompts.HISTORY.format(history=chr(10).join(lines))
+
+
+def search_text(state: State) -> str:
+    """검색에는 이전 발화를 **합친다.** 품목은 1턴에, 수량·재질은 2턴에 나오기 때문이다.
+
+    분류·답변에는 합치지 않는다(`history_block`). 찾는 일과 답하는 일은 다르다.
+    """
+    prior = " ".join(u for u, _ in (state.get("history") or []))
+    return (prior + " " + state["query"]).strip()
+
+
 def client():
     """지연 생성. 모듈 수준에서 만들면 키 없는 사람은 import 조차 못 한다."""
     global _client
@@ -47,6 +72,7 @@ def client():
 
 class State(TypedDict, total=False):
     query: str
+    history: list          # [(사용자, 봇), …] — 배경이고 답할 대상이 아니다
     category: str
     missing: list
     terms: list
@@ -77,7 +103,9 @@ def classify(state: State) -> State:
     cats = "\n".join(f"- {k}: {v}" for k, v in prompts.CATEGORIES.items())
     r = client().beta.chat.completions.parse(
         model=MODEL,
-        messages=[{"role": "system", "content": prompts.CLASSIFY.format(categories=cats)},
+        messages=[{"role": "system",
+                   "content": prompts.CLASSIFY.format(categories=cats,
+                                                      history=history_block(state))},
                   {"role": "user", "content": state["query"]}],
         response_format=Category,
     )
@@ -97,6 +125,7 @@ def gate(state: State) -> State:
         model=GATE_MODEL,
         messages=[{"role": "system",
                    "content": prompts.GATE.format(category=state["category"],
+                                                  history=history_block(state),
                                                   query=state["query"])}],
         response_format=Gate,
         temperature=0,
@@ -119,7 +148,7 @@ def ask(state: State) -> State:
 
 # ──────────────────── ② 근거 조립 (도구) ────────────────────
 def assemble(state: State) -> State:
-    evidence, tools = context.assemble(state["category"], state["query"],
+    evidence, tools = context.assemble(state["category"], search_text(state),
                                        state.get("terms"))
     return {"evidence": evidence, "tools_called": tools}
 
@@ -139,7 +168,8 @@ def normalize(state: State) -> State:
         model=GATE_MODEL,
         messages=[{"role": "system",
                    "content": prompts.NORMALIZE.format(
-                       terms=", ".join(context.DOC_TERMS), query=state["query"])}],
+                       terms=", ".join(context.DOC_TERMS),
+                       query=search_text(state))}],
         response_format=Terms,
         temperature=0,
     )
@@ -152,10 +182,13 @@ def answer(state: State) -> State:
     ev = state["evidence"]
     asof = max((s["기준일"] for s in ev), default="기준일 미상")
     body = "\n\n".join(f"[{s['제목']}]\n{s['본문']}" for s in ev)
-    al = context.aliases(state["query"])
+    al = [f"- 질문의 '{k}' = 근거의 '{v}'" for k, v in context.aliases(search_text(state))]
+    if state.get("terms"):
+        al.append("- 질문에 나온 물건은 문서 기준으로 **"
+                  + ", ".join(state["terms"]) + "** 에 해당한다 (다른 분류로 보지 않는다)")
     system = prompts.ANSWER.format(
-        evidence=body, asof=asof,
-        aliases="\n".join(f"- 질문의 '{k}' = 근거의 '{v}'" for k, v in al) or "- (없음)")
+        evidence=body, asof=asof, history=history_block(state),
+        aliases="\n".join(al) or "- (없음)")
     system += prompts.CATEGORY_NOTE.get(state["category"], "")
 
     msgs = [{"role": "system", "content": system},
@@ -247,10 +280,22 @@ def build():
 GRAPH = build()
 
 
-def run(query: str) -> State:
-    return GRAPH.invoke({"query": query, "evidence": [], "tools_called": [],
+def run(query: str, history: list | None = None) -> State:
+    """한 턴을 돌린다. `history` 는 [(사용자, 봇), …] — 앞선 턴들."""
+    return GRAPH.invoke({"query": query, "history": history or [],
+                         "evidence": [], "tools_called": [],
                          "violations": [], "retried": False, "missing": [],
                          "terms": [], "normalized": False})
+
+
+def converse(turns: list[str]) -> list[State]:
+    """여러 턴을 차례로 돌린다. 시연·점검용."""
+    history, out = [], []
+    for t in turns:
+        s = run(t, history)
+        out.append(s)
+        history = history + [(t, s["answer"])]
+    return out
 
 
 def demo():
@@ -271,6 +316,12 @@ def demo():
     assert ask({"query": "술 사왔어요", "missing": ["용량", "금액"]})["tools_called"] == []
     assert route_after_verify({"violations": ["600"], "retried": True}) == END
     assert handoff({"query": "수하물 몇 kg"})["tools_called"] == []
+
+    # 멀티턴: 이전 대화는 따로 넘기고, 검색에는 합친다
+    st = {"query": "악어가죽입니다", "history": [("가방 하나 샀어요", "재질과 금액을 알려주세요")]}
+    assert "가방" in search_text(st) and "악어가죽" in search_text(st), search_text(st)
+    assert "이전 대화" in history_block(st) and "악어가죽" not in history_block(st)
+    assert history_block({"history": []}) == ""
     print("agent.py OK — 그래프 배선과 검증 규칙 통과 (API 호출 없음)")
 
 
