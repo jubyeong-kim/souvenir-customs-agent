@@ -243,10 +243,31 @@ CROSS_CHECK = {
 }
 
 
+# **총칭어**는 토큰 단위로 정확히 맞춘다. 부분 일치로 걸면 다른 말 안에 숨어 들어간다 —
+# 「식품」 을 부분 일치로 넣었더니 「산호 **장식품**」 이 검역까지 불렀다(골든셋 C2 회귀,
+# 도구 100 → 91.7%). #14 의 「육**가공품**」 과 같은 종류의 사고다.
+#
+# 이 목록이 필요한 이유: 「검역 안 받아도 되는 **식품**도 있죠?」 가 `면세` 로 분류돼
+# 검역 문서를 아예 못 보고 **"식품류는 모두 검역대상"** 이라고 틀리게 답했다.
+# 문서에는 「가열·조제된 가공식물류(김치·떡)는 검사 대상 아님」 이 있는데도.
+# (외부 검증셋 E7, 실험기록 #22)
+CROSS_EXACT = {
+    "검역": ("식품", "식료품", "먹거리", "식물류", "가공식물류"),
+}
+
+
 def cross_hits(query: str, skip: str) -> list[str]:
-    """문의의 품목이 가리키는 다른 영역. `skip`(이미 보는 영역)은 뺀다."""
-    return [cat for cat, words in CROSS_CHECK.items()
+    """문의의 품목이 가리키는 다른 영역. `skip`(이미 보는 영역)은 뺀다.
+
+    고유한 품목명은 부분 일치로(「돼지고기」 안의 「고기」 를 잡아야 한다),
+    총칭어는 **토큰 정확 일치**로 건다(「장식품」 안의 「식품」 은 잡으면 안 된다).
+    """
+    hits = [cat for cat, words in CROSS_CHECK.items()
             if cat != skip and any(w in query for w in words)]
+    toks = set(tokenize(query))
+    hits += [cat for cat, words in CROSS_EXACT.items()
+             if cat != skip and cat not in hits and toks & set(words)]
+    return hits
 
 
 def assemble(category: str, query: str, terms: list[str] | None = None

@@ -141,6 +141,13 @@ def main() -> int:
         print(f"검증셋이 없다: {path}")
         return 1
     cases = json.loads(path.read_text(encoding="utf-8"))
+    # 파일 첫머리의 안내 블록(`_` 로 시작하는 키만 있는 항목)은 문항이 아니다.
+    meta = [c for c in cases if "id" not in c]
+    cases = [c for c in cases if "id" in c]
+    for m in meta:
+        for k in ("_안내", "_측정_이력"):
+            if k in m:
+                print(f"  {k}: {m[k]}")
 
     runs = []
     for i in range(max(1, args.repeat)):
