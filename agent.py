@@ -195,9 +195,22 @@ def normalize(state: State) -> State:
 
 
 # ───────────────────────── ③ 답변 ─────────────────────────
+def asof_of(evidence: list) -> str:
+    """이 답변이 딛고 선 근거 중 **가장 오래된** 날짜.
+
+    처음에는 `max` 였다. 근거가 두 문서에서 오면 **더 최근 날짜**가 대표로 붙는데,
+    그러면 **가장 빨리 낡는 쪽의 낡음이 가려진다.** 검역은 수시로(며칠 단위도) 바뀌고
+    면세는 몇 년에 한 번 바뀌는데, #9 의 교차 조회가 그 둘을 한 답변에 섞는다.
+    검역만 주 1회 갱신하라고 README 에 써 두었으니(`fetch_docs.py 검역`) 날짜가 갈린다.
+    ASF 로 어제 반입이 막혔는데 화면에 최신 날짜가 붙으면 정확히 반대로 안내한다.
+    **보수적인 쪽으로 틀리는 것**이 상담 도메인에서 맞다. (피어리뷰 이슈 #1, 실험기록 #21)
+    """
+    return min((s["기준일"] for s in evidence), default="기준일 미상")
+
+
 def answer(state: State) -> State:
     ev = state["evidence"]
-    asof = max((s["기준일"] for s in ev), default="기준일 미상")
+    asof = asof_of(ev)
     body = "\n\n".join(f"[{s['제목']}]\n{s['본문']}" for s in ev)
     al = [f"- 질문의 '{k}' = 근거의 '{v}'" for k, v in context.aliases(search_text(state))]
     if state.get("terms"):
@@ -238,6 +251,13 @@ def render(rep: "Reply") -> str:
 # ───────────────────────── ④ 검증 ─────────────────────────
 NUM = re.compile(r"\d[\d,]*")
 
+# **단위가 붙은 수는 길이와 무관하게 검증한다.**
+# 처음에는 `len(plain) <= 1` 로 한 자리를 전부 봐줬다. 「1개」·「두 가지」 같은 일상 표현의
+# 오탐을 막으려던 것인데, 이 도메인에서 가장 중요한 수치 하나가 정확히 한 자리였다 —
+# **주류 한도 「2L」.** 그래서 「3L」·「9병」 이 통째로 통과했다. 틀린 답이 검증을 지났다.
+# 길이가 아니라 **단위**로 가른다. (피어리뷰 이슈 #1, 실험기록 #20)
+UNIT = re.compile(r"\d[\d,]*\s*(?:L|ml|병|개비|보루|kg|g|년|개월|달러|불|원|%)")
+
 
 def verify(state: State) -> State:
     """답변에 나온 숫자가 근거에 있는지 역추적한다. 모델은 산수와 인용을 자주 틀린다.
@@ -249,11 +269,16 @@ def verify(state: State) -> State:
     haystack = " ".join([s["본문"] for s in state["evidence"]]
                         + [s["기준일"] for s in state["evidence"]])
     haystack_nums = {n.replace(",", "") for n in NUM.findall(haystack)}
+
+    # 단위가 붙어 나온 수들. 「2L」·「9병」 처럼 한 자리여도 여기 걸리면 검증한다.
+    sized = {m.group(0) for m in UNIT.finditer(state["answer"])}
     bad = []
     for n in NUM.findall(state["answer"]):
         plain = n.replace(",", "")
-        if plain in haystack_nums or len(plain) <= 1:
+        if plain in haystack_nums:
             continue
+        if len(plain) <= 1 and not any(n in s for s in sized):
+            continue                       # 단위 없는 한 자리만 봐준다
         bad.append(n)
     return {"violations": sorted(set(bad))}
 
@@ -338,6 +363,13 @@ def demo():
     assert verify({"evidence": ev, "answer": "800달러까지 됩니다"})["violations"] == []
     assert verify({"evidence": ev, "answer": "600달러까지 됩니다"})["violations"] == ["600"]
     assert verify({"evidence": ev, "answer": "800,000원"})["violations"] == ["800,000"]
+    # 단위가 붙은 한 자리는 검증한다 (「2L」 가 한 자리라 통째로 새던 구멍)
+    assert verify({"evidence": ev, "answer": "주류는 3L까지"})["violations"] == ["3"]
+    assert verify({"evidence": ev, "answer": "조건이 두 가지, 1개만"})["violations"] == []
+
+    # 기준일은 가장 **오래된** 근거를 쓴다 — 빨리 낡는 쪽이 가려지면 안 된다
+    assert asof_of([{"기준일": "2026-09-24"}, {"기준일": "2026-09-10"}]) == "2026-09-10"
+    assert asof_of([]) == "기준일 미상"
 
     assert route_after_classify({"category": "범위밖"}) == "handoff"
     assert route_after_classify({"category": "면세"}) == "gate"
