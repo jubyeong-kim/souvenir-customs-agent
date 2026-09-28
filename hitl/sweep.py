@@ -4,6 +4,7 @@
     python hitl/sweep.py --table   저장된 초안으로 표만 다시 (API 없음)
     python hitl/sweep.py --regrade gpt-4.1   저장된 초안을 다른 채점기로 다시 채점만 (에이전트는 안 돌린다)
     python hitl/sweep.py --reread            저장된 초안에 읽기 단계(hitl.read)만 다시 — 읽기를 고친 뒤에 쓴다
+    python hitl/sweep.py --cases hitl/cases_new.json   다른 문의 파일로. 초안·표는 drafts_new.json·criteria_new.md 에 따로
 
 접수는 실제 그래프(hitl.open_app)로 한다. 돌리고 나면 CHOSEN 기준에 걸린 건이
 데모의 «승인 대기» 에 그대로 쌓여 있다.
@@ -53,6 +54,10 @@ def draft(app, case: dict) -> dict:
     t = hitl.info(app, case["id"])
     if not t["values"]:                              # 중간에 끊겼으면 이미 접수한 건은 다시 안 보낸다
         t = hitl.submit(app, case["id"], case["query"])
+    elif not t["waiting"] and not t["values"].get("status"):
+        # 접수는 됐는데 도중에 끊긴 건(API 한도 등). 처음부터가 아니라 끊긴 노드부터 이어 간다
+        app.invoke(None, hitl.cfg(case["id"]))
+        t = hitl.info(app, case["id"])
     v = t["values"]
     # 신호 자체가 아니라 **신호의 재료**를 남긴다. 기준을 새로 짜도 API 를 다시 부르지 않게.
     keep = {k: v.get(k) for k in ("query", "terms", "reply", "violations", "판정", "주장", "인용확인",
@@ -148,17 +153,23 @@ def table(cases: list[dict], rows: list[dict]) -> str:
 
 
 def main() -> None:
+    global CASES, DRAFTS, TABLE
     p = argparse.ArgumentParser()
     p.add_argument("--table", action="store_true", help="API 없이 저장된 초안으로 표만")
     p.add_argument("--regrade", metavar="MODEL", help="저장된 초안을 이 모델로 다시 채점")
     p.add_argument("--reread", action="store_true", help="저장된 초안에 읽기 단계만 다시")
+    p.add_argument("--cases", help="다른 문의 파일 (예: hitl/cases_new.json)")
     a = p.parse_args()
+    if a.cases:                                     # cases_new.json → drafts_new.json, criteria_new.md
+        CASES = hitl.pathlib.Path(a.cases).resolve()
+        tag = CASES.stem.removeprefix("cases")
+        DRAFTS, TABLE = hitl.RUNS / f"drafts{tag}.json", hitl.HERE / f"criteria{tag}.md"
     cases = json.loads(CASES.read_text(encoding="utf-8"))
     rows = (regrade(cases, a.regrade) if a.regrade else reread() if a.reread
             else json.loads(DRAFTS.read_text(encoding="utf-8")) if a.table else collect(cases))
     md = table(cases, rows)
-    TABLE.write_text("# 멈춤 기준 비교 — `python hitl/sweep.py --table` 이 만든다\n\n" + md,
-                     encoding="utf-8")
+    how = "python hitl/sweep.py --table" + (f" --cases hitl/{CASES.name}" if a.cases else "")
+    TABLE.write_text(f"# 멈춤 기준 비교 — `{how}` 이 만든다\n\n" + md, encoding="utf-8")
     print("\n" + md.split("\n## 건별")[0])
 
 
