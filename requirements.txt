@@ -6,6 +6,9 @@ pydantic
 python-dotenv
 pyyaml
 
+# 승인 데모(hitl/) — 대기 건을 파일(sqlite)에 저장한다
+langgraph-checkpoint-sqlite
+
 # 문서를 받아오는 데 필요한 것 (fetch_docs.py). 데모는 커밋된 docs/ 를 읽으므로 없어도 돈다.
 requests
 trafilatura

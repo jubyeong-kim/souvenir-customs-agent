@@ -105,6 +105,10 @@ class Reply(BaseModel):
     데모 화면이 토막마다 다르게 보여 줄 수 있다.
     """
     결론: str = Field(description="한 문장. 되는지 안 되는지, 조건이 붙는지")
+    # 여기에 «판정(가능/불가)» 칸을 더하면 안 된다. 고를 칸이 생기면 모델이 가부를 먼저 정하고
+    # 근거에 없는 절차까지 지어내 맞춘다 — 「한도 넘은 걸 버리고 나와도 되나요?」 에 문서에 없는
+    # 「공항에서 폐기할 수 있다」 가 칸 없이 6회 중 2회, 칸을 넣으니 12회 중 11회 나왔다
+    # (칸 위치·「자료에 없음」 선택지를 바꿔도 같았다). 판정은 hitl/ 이 초안을 다 쓴 뒤 따로 읽는다.
     준비물: list[str] = Field(description="입국할 때 챙겨야 하는 것·해야 하는 행동. 없으면 빈 목록")
     자세히: str = Field(description="기준·한도·예외·처벌. 3~6문장")
 
@@ -223,12 +227,16 @@ def answer(state: State) -> State:
 
     msgs = [{"role": "system", "content": system},
             {"role": "user", "content": state["query"]}]
-    if state.get("violations"):                     # 재작성: 무엇이 틀렸는지 알려 준다
+    fix = []                                        # 재작성: 무엇이 틀렸는지 알려 준다
+    if state.get("violations"):
+        fix.append("위 답변에 [근거]에 없는 값이 있습니다: "
+                   + ", ".join(state["violations"])
+                   + ". 그 값을 빼거나 [근거]에 있는 값으로 바꿔 다시 쓰세요.")
+    if state.get("instruction"):                    # 담당자의 «다시 판정» 지시 (hitl/)
+        fix.append("담당자 지시: " + state["instruction"] + " — [근거] 안에서만 고쳐 다시 쓰세요.")
+    if fix:
         msgs.append({"role": "assistant", "content": state["answer"]})
-        msgs.append({"role": "user", "content":
-                     "위 답변에 [근거]에 없는 값이 있습니다: "
-                     + ", ".join(state["violations"])
-                     + ". 그 값을 빼거나 [근거]에 있는 값으로 바꿔 다시 쓰세요."})
+        msgs.append({"role": "user", "content": "\n".join(fix)})
     r = client().beta.chat.completions.parse(
         model=ANSWER_MODEL, messages=msgs, response_format=Reply, temperature=0)
     rep = r.choices[0].message.parsed
@@ -337,12 +345,16 @@ def build():
 GRAPH = build()
 
 
+def initial(query: str, history: list | None = None) -> State:
+    return {"query": query, "history": history or [], "reply": {},
+            "evidence": [], "tools_called": [],
+            "violations": [], "retried": False, "missing": [],
+            "terms": [], "normalized": False}
+
+
 def run(query: str, history: list | None = None) -> State:
     """한 턴을 돌린다. `history` 는 [(사용자, 봇), …] — 앞선 턴들."""
-    return GRAPH.invoke({"query": query, "history": history or [], "reply": {},
-                         "evidence": [], "tools_called": [],
-                         "violations": [], "retried": False, "missing": [],
-                         "terms": [], "normalized": False})
+    return GRAPH.invoke(initial(query, history))
 
 
 def converse(turns: list[str]) -> list[State]:
