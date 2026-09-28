@@ -119,6 +119,49 @@ def quoted(q: str, evidence: list) -> bool:
     return len(q) >= 8 and q in squash(" ".join(e["본문"] for e in evidence))
 
 
+# ───────────────────────── 숫자를 품목과 짝지어 보기 ─────────────────────────
+# 루트의 숫자 검증(agent.verify)은 답의 숫자가 근거 **어딘가에** 있는지만 본다.
+# 「술은 2L 이하, 총 가격 800달러 이하」 가 그래서 통과했다 — 800 은 기본 면세범위라 근거에 있다.
+# 정답은 400달러다. 별도 한도가 있는 품목은 숫자를 그 품목과 짝지어, 근거에도 같은 짝이 있는지 본다.
+ITEMS = {"주류": ("주류", "술", "위스키", "와인", "맥주", "소주", "양주", "보드카"),
+         "담배": ("담배", "궐련", "니코틴"),
+         "향수": ("향수",),
+         # 가짜 품목. 「주류 면세범위는 기본 면세범위(800달러)와 별도」 의 800 을 주류에서 떼어 낸다
+         "기본": ("기본",)}
+# 한도에 쓰이는 단위만. %(「자진신고 시 관세의 30% 경감」)는 품목과 무관한 공통 세율이라 뺀다
+AMOUNT = re.compile(r"(?:US)?\$\s*(\d[\d,]*)|(\d[\d,]*(?:\.\d+)?)\s*(L|ml|병|개비|보루|kg|g|달러|불|원)")
+
+
+def _amount(m: re.Match) -> str:
+    num = (m.group(1) or m.group(2)).replace(",", "")
+    return num + ("달러" if m.group(1) else {"불": "달러"}.get(m.group(3), m.group(3)))
+
+
+def pairs(text: str) -> set:
+    """(품목, 숫자+단위) 짝. 숫자는 **같은 문장에서 바로 앞에 나온 품목**에 붙인다.
+
+    ponytail: 가장 가까운 앞 품목에 붙이는 규칙 하나. 「술과 향수를 제외한 물품은 800달러」 처럼
+    부정문이면 엉뚱하게 붙는다(근거 쪽 짝이 늘어 느슨해지는 방향). 늘어나면 구문 분석으로 올린다.
+    """
+    out = set()
+    for sent in re.split(r"(?<=[.!?])\s+|\n", text):
+        marks = sorted((m.start(), g) for g, ws in ITEMS.items()
+                       for w in ws for m in re.finditer(w, sent))
+        for m in AMOUNT.finditer(sent):
+            before = [g for pos, g in marks if pos < m.start()]
+            if before and before[-1] != "기본":
+                out.add((before[-1], _amount(m)))
+    return out
+
+
+def mismatched(answer: str, evidence: list, query: str = "") -> list:
+    """답에는 있는데 근거에는 없는 (품목, 숫자) 짝.
+    고객이 문의에 쓴 숫자(「1L짜리 두 병, 300달러」)는 AI 의 주장이 아니므로 품목과 상관없이 뺀다."""
+    known = set().union(*(pairs(e.get("본문", "")) for e in evidence))
+    said = {_amount(m) for m in AMOUNT.finditer(query)}
+    return sorted(p for p in pairs(answer) - known if p[1] not in said)
+
+
 # ───────────────────────── 멈춤 기준 ─────────────────────────
 def signals(s: dict) -> dict:
     """멈출지 정하는 재료. **전부 코드로 센다** — 모델이 자기 답을 얼마나 확신하는지는 안 쓴다.
@@ -134,6 +177,8 @@ def signals(s: dict) -> dict:
         # 여기 걸리므로 채택하지 않고 비교표에만 둔다
         "품목없음": not set(s.get("terms") or []) & set(context.ITEM_TERMS),
         "숫자": bool(s.get("violations")),                    # 재작성 후에도 근거에 없는 숫자
+        # 숫자가 다른 품목의 것 (「술 … 800달러」)
+        "짝": bool(mismatched(s.get("answer", ""), s.get("evidence") or [], s.get("query", ""))),
         # 결론을 받치는 문장이 근거에 없다. «자료에 없다» 고 답한 초안은 받칠 문장이 없는 게 맞다 —
         # 이 면제는 모델의 판정이 아니라 **결론 글자**로 한다. 지어낸 결론(「공항에서 폐기할 수 있다」)을
         # 읽은 모델이 판정을 「자료에 없음」 으로 붙여서, 판정으로 면제하면 바로 그 건이 빠져나갔다.
@@ -153,6 +198,16 @@ def _risky_item(s: dict) -> str:
             "틀리면 고객이 물건을 몰수당하거나 과태료·처벌을 받는다")
 
 
+def _pair_reason(s: dict) -> str:
+    ev = s.get("evidence") or []
+    known = set().union(*(pairs(e.get("본문", "")) for e in ev))
+    parts = []
+    for g, a in mismatched(s["answer"], ev, s.get("query", "")):
+        ok = sorted(x for gg, x in known if gg == g)
+        parts.append(f"{g} {a}" + (f" (근거의 {g}: {', '.join(ok)})" if ok else f" (근거에 {g} 한도가 없음)"))
+    return "근거에서 같은 품목과 짝지어 나오지 않는 숫자: " + "; ".join(parts)
+
+
 # 채택 기준을 이루는 조각. 이름 → (걸리는가, 멈춘 이유 문장)
 RULES = {
     "위험 품목 허용": (lambda g: (g["영역"] or g["품목"]) and g["허용"], _risky_item),
@@ -160,6 +215,7 @@ RULES = {
              lambda s: "재작성 후에도 근거에 없는 숫자가 남음: " + ", ".join(s["violations"])),
     "인용": (lambda g: g["인용"],
              lambda s: "결론을 받치는 문장을 근거에서 찾지 못함 — 근거에 없는 내용을 지어냈을 수 있다"),
+    "숫자 짝": (lambda g: g["짝"], _pair_reason),
 }
 
 
@@ -177,12 +233,14 @@ CRITERIA = {
     "영역·품목 × 허용": either("위험 품목 허용"),
     "영역·품목 × 허용 + 숫자": either("위험 품목 허용", "숫자"),
     "영역·품목 × 허용 + 숫자 + 인용": either("위험 품목 허용", "숫자", "인용"),
-    "위 + 품목 미상 × 허용": _ans(lambda g: CRITERIA["영역·품목 × 허용 + 숫자 + 인용"](g)
+    "숫자 짝만": either("숫자 짝"),
+    "영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝": either("위험 품목 허용", "숫자", "인용", "숫자 짝"),
+    "위 + 품목 미상 × 허용": _ans(lambda g: CRITERIA["영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝"](g)
                                  or (g["품목없음"] and g["허용"])),
     "전부 멈춤": lambda g: True,
 }
-CHOSEN = "영역·품목 × 허용 + 숫자 + 인용"
-CHOSEN_RULES = ("위험 품목 허용", "숫자", "인용")    # CHOSEN 과 같은 조각 (자체 점검이 맞춰 본다)
+CHOSEN = "영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝"
+CHOSEN_RULES = ("위험 품목 허용", "숫자", "인용", "숫자 짝")    # CHOSEN 과 같은 조각 (자체 점검이 맞춰 본다)
 
 
 def stop_reasons(s: dict) -> list[str]:
@@ -393,6 +451,19 @@ def demo():
     assert not quoted("면세 한도를 넘은 물품은 공항에서 폐기할 수 있다", ev)    # 지어낸 인용
     assert not quoted("육가공품", ev)                                           # 너무 짧으면 인용이 아니다
 
+    # ①-b 숫자 짝: 근거에 있는 숫자라도 **다른 품목의 것**이면 걸린다
+    duty = [{"카테고리": "면세", "본문": "- 여행자 휴대품 미화 800달러 이하\n"
+                     "- 위항과 별도로 주류(전체 용량이 2L이하이고 총 가격이 미화 400달러 이하), "
+                     "필터담배 200개비, 향수 100ml\n"
+                     "●담배는 여행자 휴대품 기본면세범위(US$800)에서 제외되어 별도로 면세처리 됩니다."}]
+    assert mismatched("술은 2L 이하, 총 가격 800달러 이하입니다.", duty) == [("주류", "800달러")]
+    assert mismatched("술은 2L 이하, 총 가격 400달러 이하입니다.", duty) == []
+    assert mismatched("술은 2병까지 됩니다.", duty) == [("주류", "2병")]           # 병 수 제한은 옛 기준
+    assert mismatched("주류 면세범위는 기본 면세범위(800달러)와 별도입니다.", duty) == []
+    assert mismatched("주류를 초과하면 관세의 30%를 경감받습니다.", duty) == []     # 공통 세율은 품목과 무관
+    assert mismatched("위스키 1L 두 병은 총 2L 입니다.", duty, "1L짜리 두 병이에요") == []  # 고객이 말한 숫자
+    assert mismatched("기본 면세범위는 800달러입니다.", duty) == []                 # 품목이 없으면 짝도 없다
+
     # ② 기준: 검역 영역의 «가능» 은 멈추고, «불가» 와 면세 답변과 되묻기는 자동
     ev_q = [{"카테고리": "검역"}]
     ev_d = [{"카테고리": "면세"}]
@@ -412,6 +483,11 @@ def demo():
         ({"reply": {"결론": "그 내용은 안내된 자료에 없다."}, "evidence": ev_d, "판정": "자료에 없음",
           "인용확인": False, "query": "버리고"}, False),
         ({"evidence": [], "reply": {}, "query": "고기 좀 사왔는데"}, False),     # 되묻기는 판정이 없다
+        # 면세 답변이라도 술 한도에 기본 면세범위 숫자를 붙이면 멈춘다
+        ({**ok, "evidence": duty, "판정": "해당 없음", "query": "술도 신고해야 하나요?",
+          "answer": "술은 2L 이하, 총 가격 800달러 이하면 됩니다."}, True),
+        ({**ok, "evidence": duty, "판정": "해당 없음", "query": "술도 신고해야 하나요?",
+          "answer": "술은 2L 이하, 총 가격 400달러 이하면 됩니다."}, False),
     ]
     for s, want in cases:
         assert bool(stop_reasons(s)) == want == CRITERIA[CHOSEN](signals(s)), s
