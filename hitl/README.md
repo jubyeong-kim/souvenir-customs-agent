@@ -63,6 +63,12 @@ python hitl/sweep.py --regrade gpt-4.1
 python hitl/sweep.py --reread
 ```
 
+새 문의 40건으로 잰다. 초안과 표는 `runs/drafts_new.json`, `criteria_new.md`에 따로 남는다.
+
+```bash
+python hitl/sweep.py --cases hitl/cases_new.json
+```
+
 **5. 웹 데모.**
 
 ```bash
@@ -89,5 +95,6 @@ streamlit run hitl/app.py
 | `app.py` | Streamlit 승인 데모 |
 | `sweep.py` | 51건 접수, 채점, 기준별 비교표(`criteria.md`) 생성 |
 | `cases.json` | 문의 51건과 "사람이 봐야 하나" 라벨, 라벨 이유 |
+| `cases_new.json` | 기준을 모르는 별도 에이전트가 근거 문서만 보고 쓴 새 문의 40건(측정 전) |
 | `criteria.md` | 기준별 개입률·놓침·헛멈춤 표와 건별 신호 |
 | `runs/` | 대기 건 저장소(`checkpoints.sqlite`), 발송함(`outbox.jsonl`), 초안(`drafts.json`). 올리지 않는다 |
