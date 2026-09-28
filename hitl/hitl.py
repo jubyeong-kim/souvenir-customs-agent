@@ -49,8 +49,9 @@ EXPIRE = ("문의하신 내용은 규정 확인이 더 필요해 담당 상담�
 class State(agent.State, total=False):
     received_at: str
     판정: str            # read 가 초안을 읽고 붙인다
-    인용: str            # 결론을 받치는 근거 문장 — read 가 옮겨 적고
-    인용확인: bool       # 그 문장이 정말 근거에 있는지는 코드가 본다
+    주장: list           # 결론을 주장 단위로 나눈 것 [{주장, 인용, 확인}] — 인용은 read 가 옮겨 적고
+    인용확인: bool       # 모든 주장의 인용이 정말 근거에 있는지는 코드가 본다
+    미특정: bool         # 고객이 자기 물건의 가부를 묻는데 물건이 무엇인지 모른다(되물었어야 했다)
     reasons: list        # 멈춘 이유 — 사람이 읽는 문장
     human: dict          # 담당자의 마지막 답 {action, text}
     redo: int
@@ -64,10 +65,17 @@ def now() -> str:
 
 
 # ───────────────────────── 초안 읽기 ─────────────────────────
+class Claim(BaseModel):
+    주장: str = Field(description="[결론]이 말하는 행동이나 조건 하나. 짧게")
+    인용: str = Field(description="그 주장을 받치는 [근거] 문장 하나를 한 글자도 바꾸지 않고 복사. "
+                                 "받치는 문장이 [근거]에 없으면 빈 문자열")
+
+
 class Reading(BaseModel):
     판정: Literal["가능", "조건부 가능", "불가", "해당 없음", "자료에 없음"]
-    인용: str = Field(description="[결론]을 받치는 [근거] 문장 하나를 한 글자도 바꾸지 않고 복사. "
-                                 "받치는 문장이 [근거]에 없으면 빈 문자열")
+    주장: list[Claim] = Field(description="[결론]을 주장 단위로 나눈 것. 1~3개")
+    물건_미특정: bool = Field(description="[문의]가 고객 자신의 물건을 들여와도 되는지·신고해야 하는지 묻는데, "
+                                        "[문의]만으로는 그 물건이 무엇인지 알 수 없는가")
 
 
 READ = """상담원이 [근거]만 보고 [문의]에 답장을 썼다. 너는 그 답장의 [결론]을 **읽기만** 한다.
@@ -87,9 +95,16 @@ READ = """상담원이 [근거]만 보고 [문의]에 답장을 썼다. 너는 �
    - 불가: 들여올 수 없다
    - 해당 없음: 한도·세금·절차만 말하고 물건을 들여와도 되는지는 말하지 않는다
    - 자료에 없음: 안내할 자료가 없다고 말한다
-2. 인용 — [결론]을 받치는 [근거]의 문장 하나를 **그대로 복사**한다. 요약하거나 바꿔 쓰지 않는다.
-   받친다는 것은 [결론]이 말하는 **행동과 조건**이 그 문장에 적혀 있다는 뜻이다. 주제만 같은 문장은 아니다.
-   [근거] 어디에도 없으면 빈 문자열을 준다."""
+2. 주장 — [결론]을 행동·조건 단위로 1~3개로 나눈다. 「폐기할 수 있지만 신고해야 한다」 는
+   「폐기할 수 있다」 와 「신고해야 한다」 둘이다. 주장마다 그것을 받치는 [근거]의 문장 하나를
+   **그대로 복사**한다. 요약하거나 바꿔 쓰지 않는다. 받친다는 것은 그 주장의 행동과 조건이
+   문장에 적혀 있다는 뜻이다. 주제만 같은 문장은 아니다. [근거] 어디에도 없으면 빈 문자열을 준다.
+3. 물건_미특정 — [문의]가 고객 **자신의 물건**을 들여와도 되는지·신고해야 하는지 묻는데,
+   그 물건을 「기념품」·「이거」·「물건」·「선물」 처럼 뭉뚱그려 말하고 **물건 이름이 전혀 없으면** true.
+   「기념품 좀 사왔는데 신고해야 하나요?」 는 true 다 — 기념품이 육포인지 열쇠고리인지에 따라 답이 갈린다.
+   다음은 모두 false 다.
+   - 물건 이름이 하나라도 나온다(「술 좀 사왔어요」, 「소가죽이에요」). 수량·금액·원산지가 빠진 것은 상관없다
+   - 한도·기준·처리 방법 자체를 묻는다(「기념품 얼마까지 세금 안 내나요?」, 「한도 넘으면 어떻게 해요?」)"""
 
 
 def read(s: State) -> State:
@@ -100,13 +115,19 @@ def read(s: State) -> State:
     답장 본문에서 베껴 왔고(지어낸 절차까지 «인용» 으로 옮겼다), 망고 「가져올 수 없습니다」 를
     「가능」 으로 읽었다. 판정이 기준을 가르므로 읽기는 큰 모델(GATE_MODEL)로 한다.
     """
-    body = "\n\n".join(f"[{e['제목']}]\n{e['본문']}" for e in s["evidence"])
+    body = "\n\n".join(f"[{e.get('제목', '')}]\n{e['본문']}" for e in s["evidence"])
     prompt = READ.format(query=s["query"], conclusion=s["reply"]["결론"], evidence=body)
     r = agent.client().beta.chat.completions.parse(
         model=agent.GATE_MODEL, temperature=0, response_format=Reading,
         messages=[{"role": "user", "content": prompt}])
     got = r.choices[0].message.parsed
-    return {"판정": got.판정, "인용": got.인용.strip(), "인용확인": quoted(got.인용, s["evidence"])}
+    # 결론 전체에 인용 하나를 받던 때는 「폐기할 수 있지만 신고해야」 의 「신고」 만 받치는 문장이
+    # 걸려도 통과했다(B8). 주장마다 따로 인용을 받고, **하나라도** 근거에 없으면 인용 없음이다.
+    claims = [{"주장": c.주장, "인용": c.인용.strip(), "확인": quoted(c.인용, s["evidence"])}
+              for c in got.주장]
+    return {"판정": got.판정, "주장": claims,
+            "인용확인": bool(claims) and all(c["확인"] for c in claims),
+            "미특정": got.물건_미특정}
 
 
 def squash(t: str) -> str:
@@ -163,6 +184,9 @@ def mismatched(answer: str, evidence: list, query: str = "") -> list:
 
 
 # ───────────────────────── 멈춤 기준 ─────────────────────────
+OWN = re.compile(r"사\s?왔|샀|사온|가져|들고|받았|받은")    # 고객이 물건을 갖고 있다는 말
+
+
 def signals(s: dict) -> dict:
     """멈출지 정하는 재료. **전부 코드로 센다** — 모델이 자기 답을 얼마나 확신하는지는 안 쓴다.
     판정·인용은 모델이 읽어 온 것이지만, 인용이 근거에 있는지는 글자 대조로 본다."""
@@ -183,6 +207,10 @@ def signals(s: dict) -> dict:
         # 이 면제는 모델의 판정이 아니라 **결론 글자**로 한다. 지어낸 결론(「공항에서 폐기할 수 있다」)을
         # 읽은 모델이 판정을 「자료에 없음」 으로 붙여서, 판정으로 면제하면 바로 그 건이 빠져나갔다.
         "인용": not s.get("인용확인") and "자료에 없" not in (s.get("reply") or {}).get("결론", ""),
+        # 물건이 무엇인지 모르는 채로 그 물건의 가부·신고를 답했다. 되묻기(gate)를 한 번 더 확인한다.
+        # 모델의 판단만 쓰면 규정 질문(「한도 넘으면 얼마 더 내요?」)까지 흔들려 걸렸다 — 고객이
+        # 물건을 **갖고 있다는 말**이 문의에 있을 때만 센다
+        "미특정": bool(s.get("미특정")) and bool(OWN.search(s.get("query", ""))),
     }
 
 
@@ -208,14 +236,22 @@ def _pair_reason(s: dict) -> str:
     return "근거에서 같은 품목과 짝지어 나오지 않는 숫자: " + "; ".join(parts)
 
 
+def _quote_reason(s: dict) -> str:
+    bad = [c["주장"].rstrip(".") for c in s.get("주장") or [] if not c["확인"]]
+    what = ", ".join(f"「{b}」" for b in bad) if bad else "결론 전체"
+    return f"근거에서 받치는 문장을 찾지 못한 주장: {what} — 근거에 없는 내용을 지어냈을 수 있다"
+
+
 # 채택 기준을 이루는 조각. 이름 → (걸리는가, 멈춘 이유 문장)
 RULES = {
     "위험 품목 허용": (lambda g: (g["영역"] or g["품목"]) and g["허용"], _risky_item),
     "숫자": (lambda g: g["숫자"],
              lambda s: "재작성 후에도 근거에 없는 숫자가 남음: " + ", ".join(s["violations"])),
-    "인용": (lambda g: g["인용"],
-             lambda s: "결론을 받치는 문장을 근거에서 찾지 못함 — 근거에 없는 내용을 지어냈을 수 있다"),
+    "인용": (lambda g: g["인용"], _quote_reason),
     "숫자 짝": (lambda g: g["짝"], _pair_reason),
+    "물건 미특정": (lambda g: g["미특정"],
+                    lambda s: "고객이 물건이 무엇인지 말하지 않았는데 되묻지 않고 답했다 — "
+                              "그 물건이 검역·멸종위기종 품목이면 틀린 안내가 된다"),
 }
 
 
@@ -235,12 +271,16 @@ CRITERIA = {
     "영역·품목 × 허용 + 숫자 + 인용": either("위험 품목 허용", "숫자", "인용"),
     "숫자 짝만": either("숫자 짝"),
     "영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝": either("위험 품목 허용", "숫자", "인용", "숫자 짝"),
-    "위 + 품목 미상 × 허용": _ans(lambda g: CRITERIA["영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝"](g)
-                                 or (g["품목없음"] and g["허용"])),
+    "물건 미특정만": either("물건 미특정"),
+    "영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝 + 물건 미특정":
+        either("위험 품목 허용", "숫자", "인용", "숫자 짝", "물건 미특정"),
+    # 물건 미특정을 LLM 대신 «품목 사전에 없음» 으로 셌을 때. 규정만 묻는 문의까지 걸린다
+    "위 넷 + 품목 사전 없음 × 허용": _ans(lambda g: CRITERIA["영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝"](g)
+                                      or (g["품목없음"] and g["허용"])),
     "전부 멈춤": lambda g: True,
 }
-CHOSEN = "영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝"
-CHOSEN_RULES = ("위험 품목 허용", "숫자", "인용", "숫자 짝")    # CHOSEN 과 같은 조각 (자체 점검이 맞춰 본다)
+CHOSEN = "영역·품목 × 허용 + 숫자 + 인용 + 숫자 짝 + 물건 미특정"
+CHOSEN_RULES = ("위험 품목 허용", "숫자", "인용", "숫자 짝", "물건 미특정")  # CHOSEN 과 같은 조각 (자체 점검이 맞춰 본다)
 
 
 def stop_reasons(s: dict) -> list[str]:
@@ -267,7 +307,7 @@ def payload(s: State) -> dict:
         "받은 시각": s.get("received_at", ""),
         "판정": s.get("판정", ""),
         "초안": s["answer"],
-        "근거 문장": s.get("인용", "") if s.get("인용확인") else "",   # 결론을 받치는 규정 원문 한 줄
+        "근거 주장": s.get("주장") or [],     # 결론의 주장마다 받치는 규정 원문 {주장, 인용, 확인}
         "근거": [{k: e[k] for k in ("제목", "카테고리", "기준일", "출처", "본문")}
                  for e in s.get("evidence") or []],
         "멈춘 이유": reasons,
@@ -433,7 +473,8 @@ def _fake_llm():
 
     def read(s):
         return {"판정": re.search(r"\((.+)\)", s["answer"]).group(1),
-                "인용": "육가공품 검역증명서", "인용확인": True}
+                "주장": [{"주장": "증명서가 있으면 반입", "인용": "육가공품 검역증명서", "확인": True}],
+                "인용확인": True, "미특정": False}
 
     return SimpleNamespace(classify=classify, assemble=assemble, answer=answer, read=read,
                            gate=lambda s: {"missing": []},
@@ -483,6 +524,9 @@ def demo():
         ({"reply": {"결론": "그 내용은 안내된 자료에 없다."}, "evidence": ev_d, "판정": "자료에 없음",
           "인용확인": False, "query": "버리고"}, False),
         ({"evidence": [], "reply": {}, "query": "고기 좀 사왔는데"}, False),     # 되묻기는 판정이 없다
+        # 물건이 무엇인지 모르는데 되묻지 않고 답했다 (「기념품 좀 사왔는데 신고해야 하나요?」)
+        ({**ok, "evidence": ev_d, "판정": "조건부 가능", "query": "기념품 좀 사왔는데 신고해야 하나요?",
+          "미특정": True}, True),
         # 면세 답변이라도 술 한도에 기본 면세범위 숫자를 붙이면 멈춘다
         ({**ok, "evidence": duty, "판정": "해당 없음", "query": "술도 신고해야 하나요?",
           "answer": "술은 2L 이하, 총 가격 800달러 이하면 됩니다."}, True),

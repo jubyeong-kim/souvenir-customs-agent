@@ -56,7 +56,8 @@ with st.sidebar:
         "- 검역·멸종위기종 품목인데 AI가 **가져와도 된다**(가능·조건부 가능)고 답한 초안\n"
         "- 재작성 후에도 **근거에 없는 숫자**가 남은 초안\n"
         "- 결론을 받치는 **문장이 근거 문서에 없는** 초안\n"
-        "- 술·담배·향수에 붙인 숫자가 **근거에서 그 품목의 숫자가 아닌** 초안")
+        "- 술·담배·향수에 붙인 숫자가 **근거에서 그 품목의 숫자가 아닌** 초안\n"
+        "- 고객이 **물건 이름 없이**(「기념품」) 물었는데 되묻지 않고 답한 초안")
     st.subheader("바로 나가는 건")
     st.markdown("- 면세 한도처럼 숫자로 답하고 검증을 통과한 초안\n"
                 "- 검역 품목이라도 **불가**라고 답한 초안\n"
@@ -141,11 +142,13 @@ with tab_wait:
                 st.markdown(p["초안"])
 
             st.markdown("**결론을 받치는 규정 원문**")
-            if p["근거 문장"]:
-                st.markdown(f"<div class='quote'>{html.escape(p['근거 문장'])}</div>",
-                            unsafe_allow_html=True)
-            else:
-                st.warning("근거 문서에서 결론을 받치는 문장을 찾지 못했습니다.")
+            for c in p["근거 주장"]:
+                st.caption(c["주장"])
+                if c["확인"]:
+                    st.markdown(f"<div class='quote'>{html.escape(c['인용'])}</div>",
+                                unsafe_allow_html=True)
+                else:
+                    st.warning("근거 문서에서 이 주장을 받치는 문장을 찾지 못했습니다.")
 
             st.markdown(f"**근거로 쓴 규정 전체** {len(p['근거'])}개")
             for e in p["근거"]:
